@@ -142,8 +142,8 @@ def main():
     parser.add_argument(
         "--mode",
         choices=["all", "routed"],
-        default="all",
-        help="all = query every PDF, routed = supervisor selects relevant PDFs only",
+        default="routed",
+        help="all = query every PDF, routed = supervisor selects relevant PDFs only (default)",
     )
     parser.add_argument("--max-files", type=int, default=3, help="Max PDFs the router can select")
     args = parser.parse_args()
