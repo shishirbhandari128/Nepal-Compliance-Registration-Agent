@@ -8,3 +8,7 @@ __pycache__/
 .vscode/
 .gitignore
 .gitignore
+docker-compose.yml
+docker-compose.override.yml
+docker-compose.override.yml
+Dockerfile

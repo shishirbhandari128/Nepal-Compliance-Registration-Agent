@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nepal Compliance Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #0d0f0e;
+    --surface:   #141714;
+    --border:    #242824;
+    --accent:    #c8f56a;
+    --accent2:   #6af5b8;
+    --muted:     #4a5249;
+    --text:      #e8ede8;
+    --text-dim:  #8a9888;
+    --danger:    #f56a6a;
+    --user-bg:   #1a2018;
+    --bot-bg:    #111410;
+    --radius:    12px;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Syne', sans-serif;
+    --serif:     'Lora', serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--serif);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    gap: 12px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-mark {
+    width: 34px; height: 34px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 14px;
+    color: #0d0f0e;
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    letter-spacing: -0.3px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .session-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    background: var(--border);
+    padding: 4px 8px;
+    border-radius: 4px;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+  /* ── Layout ── */
+  .layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  aside {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .config-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .config-label {
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  select, input[type=number], input[type=text] {
+    display: none; /* removed from UI — config is server-side */
+  }
+
+  .docs-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .doc-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    transition: background .15s;
+    cursor: default;
+  }
+  .doc-item:hover { background: var(--border); }
+
+  .doc-icon {
+    width: 28px; height: 28px;
+    background: #1e2a1e;
+    border: 1px solid #2a3a2a;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+
+  .doc-info { min-width: 0; }
+
+  .doc-name {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .doc-summary {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    margin-top: 2px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ── Chat area ── */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    scroll-behavior: smooth;
+  }
+
+  .chat-scroll::-webkit-scrollbar { width: 5px; }
+  .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Welcome state ── */
+  .welcome {
+    margin: auto;
+    text-align: center;
+    max-width: 420px;
+    padding: 40px 20px;
+  }
+
+  .welcome-icon {
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, #1e2a1e, #243024);
+    border: 1px solid #2a3a2a;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    font-size: 28px;
+    margin: 0 auto 20px;
+  }
+
+  .welcome h1 {
+    font-family: var(--sans);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+  }
+
+  .welcome h1 span { color: var(--accent); }
+
+  .welcome p {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    margin-bottom: 20px;
+  }
+
+  .sample-questions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sample-q {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--serif);
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: all .15s;
+    line-height: 1.4;
+  }
+  .sample-q:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    background: var(--user-bg);
+  }
+
+  /* ── Messages ── */
+  .msg { display: flex; gap: 12px; animation: fadeUp .3s ease; }
+  .msg.user { flex-direction: row-reverse; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .avatar {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    font-family: var(--sans);
+    font-weight: 700;
+  }
+
+  .msg.user  .avatar { background: var(--accent);  color: #0d0f0e; }
+  .msg.bot   .avatar { background: #1e2a1e; border: 1px solid #2a3a2a; color: var(--accent); }
+
+  .bubble {
+    max-width: 72%;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-size: 14px;
+    line-height: 1.75;
+  }
+
+  .msg.user .bubble {
+    background: var(--user-bg);
+    border: 1px solid #243020;
+    color: var(--text);
+    border-bottom-right-radius: 3px;
+    font-family: var(--serif);
+  }
+
+  .msg.bot .bubble {
+    background: var(--bot-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-bottom-left-radius: 3px;
+    font-family: var(--serif);
+  }
+
+  /* ── Answer sections ── */
+  .answer-body { white-space: pre-wrap; }
+
+  .meta-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pill-file  { background: #1a2a1a; color: var(--accent2); border: 1px solid #243a24; }
+  .pill-cite  { background: #1a1e2a; color: #6ab4f5; border: 1px solid #242a3a; }
+  .pill-role  { background: #2a1a1a; color: #f5a86a; border: 1px solid #3a2424; }
+
+  .specialists-toggle {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color .15s;
+  }
+  .specialists-toggle:hover { color: var(--accent); }
+
+  .specialists-panel {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .specialist-block {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .specialist-block:last-child { border-bottom: none; }
+
+  .specialist-role {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #f5a86a;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  /* ── Typing indicator ── */
+  .typing .bubble {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: bounce 1.2s infinite;
+  }
+  .dot:nth-child(2) { animation-delay: .2s; }
+  .dot:nth-child(3) { animation-delay: .4s; }
+
+  @keyframes bounce {
+    0%,80%,100% { transform: translateY(0); opacity: .5; }
+    40%         { transform: translateY(-6px); opacity: 1; }
+  }
+
+  .status-line {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-left: 8px;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+  /* ── Input bar ── */
+  .input-bar {
+    padding: 16px 28px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+
+  .input-wrap {
+    flex: 1;
+    position: relative;
+  }
+
+  textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    resize: none;
+    outline: none;
+    max-height: 140px;
+    overflow-y: auto;
+    transition: border-color .15s;
+  }
+  textarea::placeholder { color: var(--muted); }
+  textarea:focus { border-color: var(--accent); }
+
+  .send-btn {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    transition: all .15s;
+    color: #0d0f0e;
+  }
+  .send-btn:hover { background: #d8ff7a; transform: scale(1.04); }
+  .send-btn:disabled { background: var(--border); cursor: not-allowed; transform: none; }
+
+  /* ── Right panel ── */
+  .right-panel {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .panel-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .sub-q-item {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    padding: 6px 8px;
+    border-left: 2px solid var(--border);
+    margin-bottom: 6px;
+    transition: border-color .15s;
+  }
+  .sub-q-item:hover { border-color: var(--accent); color: var(--text); }
+
+  .empty-panel {
+    text-align: center;
+    padding: 30px 16px;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--sans);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">NC</div>
+    <div class="logo-text">Nepal <span>Compliance</span> Assistant</div>
+  </div>
+  <div class="header-right">
+    <div class="session-badge" id="sessionBadge">No session</div>
+    <button class="btn-ghost" onclick="clearSession()">New Session</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- Left sidebar: docs only -->
+  <aside>
+    <div class="sidebar-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
+      <div class="sidebar-label">Available Documents</div>
+      <div class="docs-list" id="docsList">
+        <div class="empty-panel">Loading documents...</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main chat -->
+  <main>
+    <div class="chat-scroll" id="chatScroll">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">⚖️</div>
+        <h1>Nepal <span>Compliance</span> Assistant</h1>
+        <p>Ask questions about business registration, tax obligations, labour law, and regulatory compliance in Nepal.</p>
+        <div class="sample-questions">
+          <button class="sample-q" onclick="fillQuestion(this)">What are the tax rules for starting a restaurant in Nepal?</button>
+          <button class="sample-q" onclick="fillQuestion(this)">How do I register a private limited company under the Company Act?</button>
+          <button class="sample-q" onclick="fillQuestion(this)">What are the VAT registration requirements for a tourism business?</button>
+          <button class="sample-q" onclick="fillQuestion(this)">What labour law obligations apply to employers in Nepal?</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrap">
+        <textarea id="questionInput" rows="1" placeholder="Ask a compliance question…" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="sendQuestion()" title="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </main>
+
+  <!-- Right panel: sub-questions -->
+  <div class="right-panel">
+    <div class="panel-header">Research Angles</div>
+    <div class="panel-scroll" id="subQPanel">
+      <div class="empty-panel">Sub-questions will appear here after your first query.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const API = 'http://localhost:8000';
+  let sessionId  = null;
+  let isLoading  = false;
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadDocuments();
+  });
+
+  async function loadDocuments() {
+    const list = document.getElementById('docsList');
+    list.innerHTML = '<div class="empty-panel">Loading…</div>';
+    try {
+      const r = await fetch(`${API}/documents`);
+      if (!r.ok) throw new Error();
+      const data = await r.json();
+      list.innerHTML = data.documents.map(d => `
+        <div class="doc-item">
+          <div class="doc-icon">📄</div>
+          <div class="doc-info">
+            <div class="doc-name">${d.filename}</div>
+            <div class="doc-summary">${d.summary}</div>
+          </div>
+        </div>
+      `).join('');
+    } catch {
+      list.innerHTML = '<div class="empty-panel">Could not load documents. Is the API running?</div>';
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function fillQuestion(btn) {
+    document.getElementById('questionInput').value = btn.textContent;
+    autoResize(document.getElementById('questionInput'));
+    document.getElementById('questionInput').focus();
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  function scrollToBottom() {
+    const el = document.getElementById('chatScroll');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function clearSession() {
+    if (sessionId) {
+      fetch(`${API}/session/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+    }
+    sessionId = null;
+    document.getElementById('sessionBadge').textContent = 'No session';
+    document.getElementById('chatScroll').innerHTML = `<div class="welcome" id="welcome">
+      <div class="welcome-icon">⚖️</div>
+      <h1>Nepal <span>Compliance</span> Assistant</h1>
+      <p>Ask questions about business registration, tax obligations, labour law, and regulatory compliance in Nepal.</p>
+      <div class="sample-questions">
+        <button class="sample-q" onclick="fillQuestion(this)">What are the tax rules for starting a restaurant in Nepal?</button>
+        <button class="sample-q" onclick="fillQuestion(this)">How do I register a private limited company under the Company Act?</button>
+        <button class="sample-q" onclick="fillQuestion(this)">What are the VAT registration requirements for a tourism business?</button>
+        <button class="sample-q" onclick="fillQuestion(this)">What labour law obligations apply to employers in Nepal?</button>
+      </div>
+    </div>`;
+    document.getElementById('subQPanel').innerHTML = '<div class="empty-panel">Sub-questions will appear here after your first query.</div>';
+  }
+
+  // ── Send ───────────────────────────────────────────────────────────────────
+
+  async function sendQuestion() {
+    const input    = document.getElementById('questionInput');
+    const question = input.value.trim();
+    if (!question || isLoading) return;
+
+    // Hide welcome
+    const welcome = document.getElementById('welcome');
+    if (welcome) welcome.remove();
+
+    isLoading = true;
+    document.getElementById('sendBtn').disabled = true;
+    input.value = '';
+    autoResize(input);
+
+    // User bubble
+    appendMessage('user', question);
+
+    // Typing indicator
+    const typingId = appendTyping();
+    scrollToBottom();
+
+    try {
+      const body = {
+        question,
+        session_id: sessionId,
+      };
+
+      const r = await fetch(`${API}/chat`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+
+      removeTyping(typingId);
+
+      if (!r.ok) {
+        const err = await r.json();
+        appendError(err.detail || 'Something went wrong.');
+      } else {
+        const data = await r.json();
+        sessionId = data.session_id;
+        document.getElementById('sessionBadge').textContent = sessionId.slice(0, 16) + '…';
+        appendBotMessage(data);
+        updateSubQPanel(data.sub_questions);
+      }
+    } catch (e) {
+      removeTyping(typingId);
+      appendError('Could not reach the API. Is it running on localhost:8000?');
+    }
+
+    isLoading = false;
+    document.getElementById('sendBtn').disabled = false;
+    scrollToBottom();
+  }
+
+  // ── Message renderers ──────────────────────────────────────────────────────
+
+  function appendMessage(role, text) {
+    const el = document.createElement('div');
+    el.className = `msg ${role}`;
+    el.innerHTML = `
+      <div class="avatar">${role === 'user' ? 'U' : '⚖'}</div>
+      <div class="bubble"><div class="answer-body">${escHtml(text)}</div></div>
+    `;
+    document.getElementById('chatScroll').appendChild(el);
+    return el;
+  }
+
+  function appendBotMessage(data) {
+    const scroll = document.getElementById('chatScroll');
+    const el     = document.createElement('div');
+    el.className = 'msg bot';
+
+    // Strip sources block from display body (we show as pills)
+    const parts  = data.answer.split('\nSources:');
+    const body   = parts[0].trim();
+
+    // Files used pills
+    const filePills = (data.files_used || [])
+      .map(f => `<span class="pill pill-file">📄 ${f}</span>`).join('');
+
+    // Citation pills (max 5 shown)
+    const citePills = (data.citations || []).slice(0, 5)
+      .map(c => `<span class="pill pill-cite">${c}</span>`).join('');
+
+    // Specialist toggle
+    const hasSpec   = data.specialist_outputs && Object.keys(data.specialist_outputs).length > 0;
+    const specId    = 'spec_' + Date.now();
+    const specBlock = hasSpec ? `
+      <button class="specialists-toggle" onclick="toggleSpec('${specId}')">
+        ▸ <span>Specialist Analysis</span>
+      </button>
+      <div id="${specId}" class="specialists-panel" style="display:none">
+        ${Object.entries(data.specialist_outputs).map(([role, text]) => `
+          <div class="specialist-block">
+            <div class="specialist-role">${role}</div>
+            <div>${escHtml(text)}</div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    el.innerHTML = `
+      <div class="avatar">⚖</div>
+      <div class="bubble">
+        <div class="answer-body">${escHtml(body)}</div>
+        ${specBlock}
+        <div class="meta-pills">
+          ${filePills}
+          ${citePills}
+        </div>
+      </div>
+    `;
+    scroll.appendChild(el);
+  }
+
+  function appendTyping() {
+    const id  = 'typing_' + Date.now();
+    const el  = document.createElement('div');
+    el.id     = id;
+    el.className = 'msg bot typing';
+    el.innerHTML = `
+      <div class="avatar">⚖</div>
+      <div class="bubble">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <span class="status-line">Researching…</span>
+      </div>
+    `;
+    document.getElementById('chatScroll').appendChild(el);
+    return id;
+  }
+
+  function removeTyping(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function appendError(msg) {
+    const el = document.createElement('div');
+    el.className = 'msg bot';
+    el.innerHTML = `
+      <div class="avatar">⚖</div>
+      <div class="bubble" style="border-color:#3a2020;color:var(--danger)">${escHtml(msg)}</div>
+    `;
+    document.getElementById('chatScroll').appendChild(el);
+  }
+
+  // ── Sub-question panel ─────────────────────────────────────────────────────
+
+  function updateSubQPanel(subQs) {
+    const panel = document.getElementById('subQPanel');
+    if (!subQs || subQs.length === 0) return;
+    panel.innerHTML = subQs.map(q =>
+      `<div class="sub-q-item">${escHtml(q)}</div>`
+    ).join('');
+  }
+
+  // ── Specialist toggle ──────────────────────────────────────────────────────
+
+  function toggleSpec(id) {
+    const el  = document.getElementById(id);
+    const btn = el.previousElementSibling;
+    if (el.style.display === 'none') {
+      el.style.display = 'block';
+      btn.querySelector('span').textContent = 'Specialist Analysis';
+      btn.firstChild.textContent = '▾ ';
+    } else {
+      el.style.display = 'none';
+      btn.querySelector('span').textContent = 'Specialist Analysis';
+      btn.firstChild.textContent = '▸ ';
+    }
+  }
+
+  // ── Utils ──────────────────────────────────────────────────────────────────
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
