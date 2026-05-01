@@ -59,3 +59,20 @@ class HealthResponse(BaseModel):
     status:   str
     version:  str
     docs_dir: str          # tells the frontend where PDFs are loaded from
+
+
+# ── Registration Agent ────────────────────────────────────────────────────────
+
+class RegistrationMessage(BaseModel):
+    message:    str            = Field(..., description="User's message to the registration agent")
+    session_id: Optional[str]  = Field(None, description="Registration session ID")
+
+
+class RegistrationResponse(BaseModel):
+    session_id:   str
+    reply:        str                    # agent's next question or confirmation
+    collected:    Dict                   # fields collected so far
+    missing:      List[str]              # field names still needed
+    complete:     bool                   # True when all fields collected
+    form_summary: Optional[str] = None  # filled form text (when complete)
+    issues:       List[str]    = []     # validation issues if any

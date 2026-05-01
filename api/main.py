@@ -1,46 +1,50 @@
 """
 api/main.py
 -----------
-FastAPI application.
-
-docs_dir, mode, max_files are all server-side config —
-the frontend never sends these. They come from environment variables.
+FastAPI application with streaming support.
 
 Endpoints:
-  GET  /health                 — liveness + config info
-  POST /chat                   — ask a question
-  GET  /documents              — list available PDFs with summaries
-  GET  /session/{session_id}   — get conversation history
-  DELETE /session/{session_id} — clear a session
+  GET  /health                    — liveness check
+  POST /chat/stream               — streaming chat (SSE)
+  POST /chat                      — non-streaming chat (kept for compatibility)
+  GET  /documents                 — list PDFs with summaries
+  GET  /session/{id}              — conversation history
+  DELETE /session/{id}            — clear session
+  POST /register/chat             — registration agent
+  DELETE /register/{id}           — clear registration session
 """
 
+import asyncio
+import json
 import os
 import uuid
 from pathlib import Path
+from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from src.graph import build_graph
 from src.state import PipelineState
 from src.memory import get_session, delete_session
 from src.tools import get_or_build_summary
 from src.pdf_loader import list_pdf_files
+from src.config import OPENAI_MODEL
 
 from .schemas import (
     ChatRequest, ChatResponse,
     DocumentListResponse, DocumentInfo,
     SessionHistoryResponse, ClearSessionResponse,
     HealthResponse,
+    RegistrationMessage, RegistrationResponse,
 )
 
-# ── Server-side config (never sent by the frontend) ──────────────────────────
-DOCS_DIR  = os.getenv("DOCS_DIR", ".")       # where PDFs live
-MAX_FILES = int(os.getenv("MAX_FILES", "3")) # router ceiling
+DOCS_DIR  = os.getenv("DOCS_DIR", ".")
+MAX_FILES = int(os.getenv("MAX_FILES", "3"))
 
 app = FastAPI(
     title="Nepal Compliance RAG API",
-    description="Multi-agent RAG system for Nepal business compliance questions.",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -53,43 +57,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Compile graph once at startup — not per request
 _graph = build_graph()
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# ── SSE helpers ───────────────────────────────────────────────────────────────
 
-@app.get("/health", response_model=HealthResponse, tags=["System"])
-def health():
-    """Liveness check — also tells the frontend where docs are loaded from."""
-    return HealthResponse(
-        status="ok",
-        version="1.0.0",
-        docs_dir=str(Path(DOCS_DIR).resolve()),
-    )
+def sse(event: str, data: dict) -> str:
+    """Format a single SSE event."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-@app.post("/chat", response_model=ChatResponse, tags=["Chat"])
-def chat(request: ChatRequest):
+# ── Streaming chat ─────────────────────────────────────────────────────────────
+
+async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
     """
-    Ask a compliance question.
-    Pass session_id to continue a previous conversation.
-    All routing decisions (mode, max_files, docs_dir) are server-side.
+    Run the full pipeline, streaming progress events then the final answer
+    token by token using OpenAI streaming.
+
+    SSE event types:
+      progress  — { stage, message }           pipeline progress updates
+      meta      — { session_id, sub_questions, files_used, routing_reason }
+      token     — { text }                     answer token
+      sources   — { citations, specialist_outputs }
+      done      — {}                           stream complete
+      error     — { message }                  error occurred
     """
+    from langchain_openai import ChatOpenAI
+    from langchain_core.prompts import ChatPromptTemplate
+
     session_id = request.session_id or str(uuid.uuid4())
     docs_dir   = Path(DOCS_DIR).resolve()
 
     if not list_pdf_files(docs_dir):
-        raise HTTPException(
-            status_code=400,
-            detail=f"No PDF files found in configured docs directory: {docs_dir}",
-        )
+        yield sse("error", {"message": f"No PDF files found in: {docs_dir}"})
+        return
+
+    # ── Stage 1: Run the full graph (decompose → route → retrieve → specialists)
+    # This part is NOT streamed — it runs silently while the user sees progress events
+
+    yield sse("progress", {"stage": "decompose",  "message": "Breaking down your question…"})
+    await asyncio.sleep(0)   # yield control so SSE flushes
 
     initial_state: PipelineState = {
         "question":           request.question,
         "docs_dir":           str(docs_dir),
-        "mode":               "routed",      # always routed
-        "max_files":          MAX_FILES,      # from server env
+        "mode":               "routed",
+        "max_files":          MAX_FILES,
         "save_json":          f"outputs/{session_id}.json",
         "session_id":         session_id,
         "sub_questions":      [],
@@ -97,6 +110,151 @@ def chat(request: ChatRequest):
         "selected_pdfs":      [],
         "routing_reason":     "",
         "per_doc_answers":    [],
+        "all_docs":           [],
+        "specialist_outputs": {},
+        "final_answer":       "",
+        "all_citations":      [],
+    }
+
+    try:
+        # Run graph in a thread so we don't block the event loop
+        loop   = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _graph.invoke, initial_state)
+    except Exception as e:
+        yield sse("error", {"message": str(e)})
+        return
+
+    sub_questions = result.get("sub_questions", [])
+    files_used    = [Path(p).name for p in result.get("selected_pdfs", [])]
+    citations     = result.get("all_citations", [])
+    spec_outputs  = result.get("specialist_outputs", {})
+    resolved_q    = result.get("resolved_question", request.question)
+
+    # Emit progress updates to show what happened
+    yield sse("progress", {"stage": "route",     "message": f"Selected {len(files_used)} document(s)…"})
+    await asyncio.sleep(0)
+    yield sse("progress", {"stage": "retrieve",  "message": f"Retrieved and reranked evidence…"})
+    await asyncio.sleep(0)
+    yield sse("progress", {"stage": "specialists","message": "Specialists analysed the evidence…"})
+    await asyncio.sleep(0)
+
+    # Send metadata so frontend can render pills / sub-questions
+    yield sse("meta", {
+        "session_id":         session_id,
+        "sub_questions":      sub_questions,
+        "files_used":         files_used,
+        "routing_reason":     result.get("routing_reason", ""),
+        "resolved_question":  resolved_q,
+    })
+    await asyncio.sleep(0)
+
+    yield sse("progress", {"stage": "faithfulness", "message": "Checking answer for accuracy…"})
+    await asyncio.sleep(0)
+    yield sse("progress", {"stage": "stream", "message": "Generating answer…"})
+    await asyncio.sleep(0)
+
+    # ── Stage 2: Stream the final merger answer token by token ────────────────
+    # We rebuild the merger prompt and stream directly from OpenAI
+    from src.tools import format_per_doc_block, build_sources_block
+    from langchain_core.prompts import ChatPromptTemplate
+
+    per_doc = result.get("per_doc_answers", [])
+
+    MERGER_PROMPT = ChatPromptTemplate.from_template(
+        """You are a senior Nepal compliance analyst. Merge the per-document answers
+and specialist perspectives into one final authoritative answer.
+
+User question:
+{question}
+
+Base answers from documents:
+{base_answer}
+
+Specialist perspectives:
+{specialist_outputs}
+
+Instructions:
+- Decide your own section headings based on what the question needs.
+- Integrate specialist insights — do not list them separately.
+- Rewrite everything in your own words.
+- Do NOT write any citations or filenames — sources are appended automatically.
+- Highlight critical steps or risks prominently.
+"""
+    )
+
+    base_answer  = format_per_doc_block(per_doc) if len(per_doc) > 1 else (per_doc[0]["answer"].split("\nSources:")[0].strip() if per_doc else "")
+    spec_block   = "\n\n".join(f"=== {role} ===\n{text}" for role, text in spec_outputs.items())
+
+    llm    = ChatOpenAI(model=OPENAI_MODEL, temperature=0.1, streaming=True)
+    prompt = MERGER_PROMPT.format_messages(
+        question=resolved_q,
+        base_answer=base_answer,
+        specialist_outputs=spec_block,
+    )
+
+    full_answer = ""
+    async for chunk in llm.astream(prompt):
+        token = chunk.content
+        if token:
+            full_answer += token
+            yield sse("token", {"text": token})
+
+    # Append sources
+    sources_text = "\n\nSources:\n" + build_sources_block(per_doc)
+    yield sse("token", {"text": sources_text})
+    full_answer += sources_text
+
+    # Save to memory
+    session = get_session(session_id)
+    session.add_assistant_turn(full_answer, sub_questions, citations)
+
+    # Send sources and specialist data for UI rendering
+    yield sse("sources", {
+        "citations":          citations,
+        "specialist_outputs": spec_outputs,
+    })
+    await asyncio.sleep(0)
+
+    yield sse("done", {})
+
+
+@app.post("/chat/stream", tags=["Chat"])
+async def chat_stream(request: ChatRequest):
+    """Streaming chat endpoint using Server-Sent Events."""
+    return StreamingResponse(
+        stream_chat(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":               "no-cache",
+            "X-Accel-Buffering":           "no",    # disable nginx buffering
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+# ── Non-streaming chat (kept for backward compatibility) ──────────────────────
+
+@app.post("/chat", response_model=ChatResponse, tags=["Chat"])
+def chat(request: ChatRequest):
+    session_id = request.session_id or str(uuid.uuid4())
+    docs_dir   = Path(DOCS_DIR).resolve()
+
+    if not list_pdf_files(docs_dir):
+        raise HTTPException(status_code=400, detail=f"No PDF files found in: {docs_dir}")
+
+    initial_state: PipelineState = {
+        "question":           request.question,
+        "docs_dir":           str(docs_dir),
+        "mode":               "routed",
+        "max_files":          MAX_FILES,
+        "save_json":          f"outputs/{session_id}.json",
+        "session_id":         session_id,
+        "sub_questions":      [],
+        "resolved_question":  "",
+        "selected_pdfs":      [],
+        "routing_reason":     "",
+        "per_doc_answers":    [],
+        "all_docs":           [],
         "specialist_outputs": {},
         "final_answer":       "",
         "all_citations":      [],
@@ -108,7 +266,6 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     files_used = [Path(p).name for p in result.get("selected_pdfs", [])]
-
     return ChatResponse(
         session_id=         session_id,
         question=           request.question,
@@ -123,35 +280,82 @@ def chat(request: ChatRequest):
     )
 
 
+# ── Documents ─────────────────────────────────────────────────────────────────
+
 @app.get("/documents", response_model=DocumentListResponse, tags=["Documents"])
 def list_documents():
-    """List all available PDFs with their cached content summaries."""
     docs_dir = Path(DOCS_DIR).resolve()
     pdfs     = list_pdf_files(docs_dir)
     if not pdfs:
         raise HTTPException(status_code=404, detail=f"No PDFs found in: {docs_dir}")
-
     return DocumentListResponse(
         docs_dir=str(docs_dir),
-        documents=[
-            DocumentInfo(filename=p.name, summary=get_or_build_summary(p))
-            for p in pdfs
-        ],
+        documents=[DocumentInfo(filename=p.name, summary=get_or_build_summary(p)) for p in pdfs],
     )
+
+
+# ── Session ───────────────────────────────────────────────────────────────────
+
+@app.get("/health", response_model=HealthResponse, tags=["System"])
+def health():
+    return HealthResponse(status="ok", version="1.0.0", docs_dir=str(Path(DOCS_DIR).resolve()))
 
 
 @app.get("/session/{session_id}", response_model=SessionHistoryResponse, tags=["Session"])
 def get_history(session_id: str):
     session = get_session(session_id)
     history = session.get_history()
-    return SessionHistoryResponse(
-        session_id=session_id,
-        turns=len(history),
-        history=history,
-    )
+    return SessionHistoryResponse(session_id=session_id, turns=len(history), history=history)
 
 
 @app.delete("/session/{session_id}", response_model=ClearSessionResponse, tags=["Session"])
 def clear_session(session_id: str):
     delete_session(session_id)
     return ClearSessionResponse(session_id=session_id, cleared=True)
+
+
+# ── Registration Agent ────────────────────────────────────────────────────────
+
+_reg_sessions: dict = {}
+
+
+@app.post("/register/chat", response_model=RegistrationResponse, tags=["Registration"])
+def registration_chat(req: RegistrationMessage):
+    from src.registration_agent import (
+        extract_fields, get_missing_fields,
+        get_next_question, validate_form,
+        build_form_summary, FIELD_LABELS,
+    )
+    sid = req.session_id or str(uuid.uuid4())
+    if sid not in _reg_sessions:
+        _reg_sessions[sid] = {"collected": {}, "history": []}
+
+    state   = _reg_sessions[sid]
+    history = state["history"]
+    history.append({"role": "user", "content": req.message})
+
+    state["collected"] = extract_fields(req.message, state["collected"])
+    missing = get_missing_fields(state["collected"])
+
+    if not missing:
+        validation = validate_form(state["collected"])
+        if not validation.get("valid", True) and validation.get("issues"):
+            issues = validation["issues"]
+            reply  = "I found a few issues:\n" + "\n".join(f"• {i}" for i in issues) + "\n\nCould you please correct these?"
+            history.append({"role": "assistant", "content": reply})
+            return RegistrationResponse(session_id=sid, reply=reply, collected=state["collected"], missing=missing, complete=False, issues=issues)
+
+        form_summary = build_form_summary(state["collected"])
+        reply = "All details collected! Here is your filled registration form. Please review carefully before submitting."
+        history.append({"role": "assistant", "content": reply})
+        return RegistrationResponse(session_id=sid, reply=reply, collected=state["collected"], missing=[], complete=True, form_summary=form_summary)
+
+    reply = get_next_question(state["collected"], history)
+    history.append({"role": "assistant", "content": reply})
+    return RegistrationResponse(session_id=sid, reply=reply, collected=state["collected"], missing=[FIELD_LABELS.get(f, f) for f in missing], complete=False)
+
+
+@app.delete("/register/{session_id}", tags=["Registration"])
+def clear_registration_session(session_id: str):
+    _reg_sessions.pop(session_id, None)
+    return {"session_id": session_id, "cleared": True}

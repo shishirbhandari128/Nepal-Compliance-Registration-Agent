@@ -83,6 +83,20 @@ def load_vectorstore(persist_dir: Path, collection: str) -> Chroma:
     )
 
 
+def _safe_collection_count(db: Chroma) -> int:
+    """
+    Best-effort count of items in the underlying Chroma collection.
+    Returns 0 if the count cannot be determined.
+    """
+    try:
+        coll = getattr(db, "_collection", None)
+        if coll is None:
+            return 0
+        return int(coll.count())
+    except Exception:
+        return 0
+
+
 def get_or_build_vectorstore(pdf: Path, chunks_fn) -> Chroma:
     """
     Load the cached vectorstore if the PDF hasn't changed.
@@ -94,7 +108,11 @@ def get_or_build_vectorstore(pdf: Path, chunks_fn) -> Chroma:
 
     if vectorstore_is_fresh(pdf, persist):
         print(f"    [cache hit]  {pdf.name}")
-        return load_vectorstore(persist, collection)
+        db = load_vectorstore(persist, collection)
+        # If a previous build wrote an empty / corrupt DB, force rebuild.
+        if _safe_collection_count(db) > 0:
+            return db
+        print(f"    [cache invalid] {pdf.name} — empty vectorstore, rebuilding…")
 
     print(f"    [rebuilding] {pdf.name}")
     if persist.exists():
@@ -103,7 +121,11 @@ def get_or_build_vectorstore(pdf: Path, chunks_fn) -> Chroma:
 
     chunks = chunks_fn()
     db = build_vectorstore(chunks, persist, collection)
-    save_pdf_hash(pdf, persist)
+    # Only mark cache fresh if we actually stored embeddings.
+    if _safe_collection_count(db) > 0:
+        save_pdf_hash(pdf, persist)
+    else:
+        print(f"    [warning] {pdf.name} vectorstore built empty — not caching hash")
     return db
 
 

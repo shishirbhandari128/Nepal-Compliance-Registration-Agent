@@ -1,9 +1,9 @@
 """
 graph.py
 --------
-LangGraph pipeline with 6 nodes:
+LangGraph pipeline — 7 nodes:
 
-  decompose → route → retrieve_and_answer → specialist_agents → merge → save → END
+  decompose → route → retrieve_and_answer → specialist_agents → merge → faithfulness → save → END
 """
 
 import json
@@ -29,23 +29,23 @@ from .rag_engine import make_retriever, answer_with_retriever
 from .agents import run_all_specialists
 from .query_decomposer import decompose_question
 from .memory import get_session
+from .faithfulness import check_and_fix
 from .config import OPENAI_MODEL
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
 _RESOLVE_PROMPT = ChatPromptTemplate.from_template(
-    """You are a question resolver. The user may have asked a follow-up question \
-that references previous conversation. Rewrite it as a fully self-contained question.
+    """You are a question resolver. Rewrite the user's follow-up question as a
+fully self-contained question using the conversation history.
+If it is already self-contained, return it unchanged.
+Return ONLY the rewritten question, nothing else.
 
 Conversation history:
 {history}
 
-Current user question:
+Current question:
 {question}
-
-If the question is already self-contained, return it unchanged.
-Return ONLY the rewritten question, nothing else.
 """
 )
 
@@ -56,15 +56,14 @@ Select ONLY the PDF files directly relevant to the user question.
 User question:
 {question}
 
-Available PDFs with content summaries:
+Available PDFs:
 {options}
 
 Rules:
-- Read each summary carefully before deciding.
 - Select ONLY files whose summary directly matches the topic.
-- Be precise — tax question → only tax documents.
+- Tax question → only tax documents. Registration → only registration documents.
 - Do NOT select loosely related files.
-- Select at most {max_files} files. If only one is relevant, select only that one.
+- Select at most {max_files} files.
 
 Return ONLY valid JSON, no markdown:
 {{
@@ -75,41 +74,38 @@ Return ONLY valid JSON, no markdown:
 )
 
 _MERGER_PROMPT = ChatPromptTemplate.from_template(
-    """You are a senior Nepal compliance analyst. You have:
-1. A base RAG answer drawn from official documents
-2. Three specialist perspectives (Legal, Tax, Document)
+    """You are a senior Nepal compliance analyst merging evidence into one answer.
 
-Merge everything into one final authoritative answer for the user.
+STRICT RULES — violations cause real harm to users:
+- You may ONLY include facts that are explicitly stated in the base RAG answer.
+- You may ONLY include specialist insights that are directly supported by the base answer.
+- If a specialist adds something NOT in the base answer, IGNORE it.
+- Do NOT generalise, interpolate, or fill gaps with assumed legal knowledge.
+- Numbers (shareholder counts, thresholds, fees, timelines) must be copied exactly
+  as they appear in the base answer — never paraphrased or rounded.
+- Do NOT write citations — sources are appended automatically.
 
 User question:
 {question}
 
-Base RAG answer:
+Base RAG answer (this is ground truth — do not contradict it):
 {base_answer}
 
-Specialist perspectives:
+Specialist perspectives (use only what is supported by the base answer above):
 {specialist_outputs}
 
-Instructions:
-- Decide your own section headings based on what the question needs.
-- Integrate specialist insights with the base answer — don't list them separately.
-- Where specialists add new information, include it. Where they repeat, merge it.
-- Rewrite everything in your own words.
-- Do NOT write citations or page numbers — sources are appended automatically.
-- Highlight critical steps or risks prominently.
-- End with a short "What still needs clarification" note if specialists flagged gaps.
+Write the final answer now:
 """
 )
 
 
-# ── Node 1: Decompose (with memory-aware follow-up resolution) ────────────────
+# ── Node 1: Decompose ─────────────────────────────────────────────────────────
 
 def node_decompose(state: PipelineState) -> dict:
     print("\n[node: decompose]")
     session  = get_session(state["session_id"])
     question = state["question"]
 
-    # Resolve follow-up questions against conversation history
     resolved_question = question
     if session.is_followup:
         history = session.get_context_string(max_turns=3)
@@ -125,7 +121,6 @@ def node_decompose(state: PipelineState) -> dict:
     for sq in sub_questions:
         print(f"    - {sq}")
 
-    # Log user turn to memory
     session.add_user_turn(question)
 
     return {
@@ -145,11 +140,11 @@ def node_route(state: PipelineState) -> dict:
         raise ValueError(f"No PDF files found in {docs_dir}")
 
     if state["mode"] == "all":
-        print(f"  Mode=all — using all {len(pdfs)} PDFs")
         return {
-            "selected_pdfs":  [str(p) for p in pdfs],
-            "routing_reason": "mode=all",
+            "selected_pdfs":   [str(p) for p in pdfs],
+            "routing_reason":  "mode=all",
             "per_doc_answers": [],
+            "all_docs":        [],
         }
 
     enriched = (
@@ -175,7 +170,7 @@ def node_route(state: PipelineState) -> dict:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        parsed = {"selected_files": [pdfs[0].name], "reason": "JSON parse failed — fallback"}
+        parsed = {"selected_files": [pdfs[0].name], "reason": "fallback"}
 
     valid          = {p.name for p in pdfs}
     selected_names = [n for n in parsed.get("selected_files", []) if n in valid]
@@ -190,13 +185,14 @@ def node_route(state: PipelineState) -> dict:
         print(f"  Routing reason : {routing_reason}")
 
     return {
-        "selected_pdfs":  [str(p) for p in selected_pdfs],
-        "routing_reason": routing_reason,
+        "selected_pdfs":   [str(p) for p in selected_pdfs],
+        "routing_reason":  routing_reason,
         "per_doc_answers": [],
+        "all_docs":        [],
     }
 
 
-# ── Node 3: Retrieve & Answer (parallel per PDF + reranking) ──────────────────
+# ── Node 3: Retrieve & Answer ─────────────────────────────────────────────────
 
 def node_retrieve_and_answer(state: PipelineState) -> dict:
     print("\n[node: retrieve_and_answer]")
@@ -222,6 +218,7 @@ def node_retrieve_and_answer(state: PipelineState) -> dict:
             "answer":        result["answer"],
             "citations":     result["citations"],
             "sub_questions": sub_questions,
+            "docs":          result["docs"],   # raw chunks — passed to faithfulness
         }
 
     print(f"  Processing {len(selected_pdfs)} PDF(s) in parallel...")
@@ -245,18 +242,33 @@ def node_retrieve_and_answer(state: PipelineState) -> dict:
                     "answer":        f"Error: {e}",
                     "citations":     [],
                     "sub_questions": sub_questions,
+                    "docs":          [],
                 }
 
-    return {"per_doc_answers": [r for r in results if r is not None]}
+    valid_results = [r for r in results if r is not None]
+
+    # Collect all raw docs across all PDFs for the faithfulness checker
+    all_docs = [doc for r in valid_results for doc in r.get("docs", [])]
+
+    # Strip docs from per_doc_answers before storing in state (not serializable)
+    per_doc_answers = [
+        {k: v for k, v in r.items() if k != "docs"}
+        for r in valid_results
+    ]
+
+    return {
+        "per_doc_answers": per_doc_answers,
+        "all_docs":        all_docs,
+    }
 
 
-# ── Node 4: Specialist Agents (parallel: Legal + Tax + Document) ───────────────
+# ── Node 4: Specialist Agents ─────────────────────────────────────────────────
 
 def node_specialist_agents(state: PipelineState) -> dict:
     print("\n[node: specialist_agents]")
     per_doc_answers = state["per_doc_answers"]
 
-    # Combine per-doc answers into one base answer for specialists
+    # Feed specialists the base RAG answer — grounded in retrieved chunks
     base_answer = "\n\n".join(
         f"--- {item['file']} ---\n{item['answer'].split(chr(10)+'Sources:')[0]}"
         for item in per_doc_answers
@@ -278,19 +290,17 @@ def node_merge(state: PipelineState) -> dict:
     per_doc_answers    = state["per_doc_answers"]
     specialist_outputs = state["specialist_outputs"]
 
-    # Format specialist outputs
     spec_block = "\n\n".join(
         f"=== {role} ===\n{text}"
         for role, text in specialist_outputs.items()
     )
 
-    # Base answer (combined from all PDFs)
     if len(per_doc_answers) == 1:
         base_answer = per_doc_answers[0]["answer"].split("\nSources:")[0].strip()
     else:
         base_answer = format_per_doc_block(per_doc_answers)
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0.1)
+    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)  # temp=0 for faithfulness
     merged_text = llm.invoke(
         _MERGER_PROMPT.format_messages(
             question=state["resolved_question"],
@@ -301,17 +311,34 @@ def node_merge(state: PipelineState) -> dict:
 
     sources      = build_sources_block(per_doc_answers)
     final_answer = f"{merged_text}\n\nSources:\n{sources}"
-
     all_citations = list({c for item in per_doc_answers for c in item["citations"]})
-
-    # Save assistant turn to memory
-    session = get_session(state["session_id"])
-    session.add_assistant_turn(final_answer, state["sub_questions"], all_citations)
 
     return {"final_answer": final_answer, "all_citations": all_citations}
 
 
-# ── Node 6: Save ──────────────────────────────────────────────────────────────
+# ── Node 6: Faithfulness check ────────────────────────────────────────────────
+
+def node_faithfulness(state: PipelineState) -> dict:
+    print("\n[node: faithfulness]")
+    result = check_and_fix(state["final_answer"], state["all_docs"])
+
+    if result["was_corrected"]:
+        print("  ⚠ Factual corrections applied to final answer")
+    else:
+        print("  ✓ Answer is faithful to source chunks")
+
+    # Save to memory only after faithfulness check
+    session = get_session(state["session_id"])
+    session.add_assistant_turn(
+        result["answer"],
+        state["sub_questions"],
+        state["all_citations"],
+    )
+
+    return {"final_answer": result["answer"]}
+
+
+# ── Node 7: Save ──────────────────────────────────────────────────────────────
 
 def node_save(state: PipelineState) -> dict:
     print("\n" + "=" * 70)
@@ -339,7 +366,7 @@ def node_save(state: PipelineState) -> dict:
     return {}
 
 
-# ── Assemble graph ────────────────────────────────────────────────────────────
+# ── Build graph ───────────────────────────────────────────────────────────────
 
 def build_graph():
     g = StateGraph(PipelineState)
@@ -349,6 +376,7 @@ def build_graph():
     g.add_node("retrieve_and_answer", node_retrieve_and_answer)
     g.add_node("specialist_agents",   node_specialist_agents)
     g.add_node("merge",               node_merge)
+    g.add_node("faithfulness",        node_faithfulness)
     g.add_node("save",                node_save)
 
     g.set_entry_point("decompose")
@@ -356,7 +384,8 @@ def build_graph():
     g.add_edge("route",               "retrieve_and_answer")
     g.add_edge("retrieve_and_answer", "specialist_agents")
     g.add_edge("specialist_agents",   "merge")
-    g.add_edge("merge",               "save")
+    g.add_edge("merge",               "faithfulness")
+    g.add_edge("faithfulness",        "save")
     g.add_edge("save",                END)
 
     return g.compile()

@@ -22,35 +22,33 @@ Your lens: {lens}
 The user asked:
 {question}
 
-A base RAG system extracted the following evidence from official documents:
-{base_answer}
+Evidence passages from the PDF(s) (each passage includes file + page):
+{evidence}
 
-Your task:
-- Analyse the evidence strictly through your specialist lens.
-- Organise your response in whatever sections make sense for this question and domain.
-- Explain in plain language as if briefing a business owner.
-- Rewrite evidence in your own words — do NOT copy sentences.
-- Be direct and actionable. Omit anything not relevant to your lens.
-- If evidence is missing for something important in your domain, flag it as \
-  "Needs further verification."
-- Do NOT write citations or page numbers.
+Rules (strict):
+- You may ONLY state facts that are directly supported by the passages above.
+- For every factual statement, include an inline evidence tag like: [file.pdf p.X]
+- If something is important but not supported, write: "Not found in provided documents."
+- Do NOT use general knowledge to fill gaps.
+
+Write a concise specialist briefing with clear headings.
 """
 )
 
 
-def _run_specialist(role: str, lens: str, question: str, base_answer: str) -> str:
+def _run_specialist(role: str, lens: str, question: str, evidence: str) -> str:
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0.1)
     return llm.invoke(
         _SPECIALIST_PROMPT.format_messages(
             role=role,
             lens=lens,
             question=question,
-            base_answer=base_answer,
+            evidence=evidence,
         )
     ).content
 
 
-def run_all_specialists(question: str, base_answer: str) -> Dict[str, str]:
+def run_all_specialists(question: str, evidence: str) -> Dict[str, str]:
     """Run all three specialists and return role → answer dict."""
     from concurrent.futures import ThreadPoolExecutor
 
@@ -76,7 +74,7 @@ def run_all_specialists(question: str, base_answer: str) -> Dict[str, str]:
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
-            executor.submit(_run_specialist, role, lens, question, base_answer): role
+            executor.submit(_run_specialist, role, lens, question, evidence): role
             for role, lens in specialists
         }
         for future in futures:

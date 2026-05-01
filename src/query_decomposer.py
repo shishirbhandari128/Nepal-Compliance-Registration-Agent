@@ -25,14 +25,19 @@ User question:
 Your task:
 - Generate sub-questions that are STRICTLY within the scope of what the user asked.
 - Do NOT expand into related topics the user did not ask about.
-- Each sub-question must be a more specific version of the user's question, \
-targeting one concrete detail (e.g. a specific tax type, a specific rate, \
-a specific filing requirement).
+- Each sub-question must target one concrete detail that, together, covers the user's question end-to-end.
+- Make the set of sub-questions COMPREHENSIVE for the asked topic:
+  - If the user asked about tax rules: cover tax types/thresholds/registration, returns & filing frequency, rates, withholding, advance tax, exemptions, penalties, timelines.
+  - If the user asked about company registration/incorporation: cover eligibility, directors, name approval, registered office, required constitutional documents (MOA/AOA if applicable), application/submission steps, fees, timelines, post-registration obligations.
+    - You MUST include at least ONE sub-question about shareholders (e.g. minimum/maximum, required shareholder details, share capital/ownership requirements) whenever the user is asking about incorporating/registering a company.
+  - If the user asked about labour law: cover wages, hours, leave, contracts, termination, safety, required records, penalties.
+  - If the user asked about licensing/permits: cover issuing authority, prerequisites, required documents, process, fees, timelines, renewals, penalties.
 - If the user asked about tax rules, only generate sub-questions about tax rules — \
 do NOT generate sub-questions about registration, licenses, or documents unless \
 the user explicitly asked about those.
-- Generate between 4 and 6 sub-questions — no more.
+- Generate between 5 and 8 sub-questions.
 - Do NOT rephrase the original question as a sub-question.
+- Use user terms (e.g. "private limited", "PAN", "VAT") to improve search recall.
 
 Examples of CORRECT decomposition for "What are the tax rules for tourism businesses?":
   - "What income tax rate applies to tourism businesses in Nepal?"
@@ -63,7 +68,24 @@ def decompose_question(question: str) -> List[str]:
     try:
         sub_questions = json.loads(raw)
         if isinstance(sub_questions, list):
-            return [q for q in sub_questions if isinstance(q, str)]
+            subs = [q for q in sub_questions if isinstance(q, str)]
+
+            # Minimal recall guard: if user is asking about company registration/incorporation,
+            # ensure shareholders are covered (the LLM often misses it).
+            ql = question.lower()
+            is_company_registration = (
+                "company" in ql
+                and any(k in ql for k in ["register", "registration", "incorporat", "incorporation", "shareholder", "shareholdar"])
+            )
+            if is_company_registration:
+                has_shareholder = any("shareholder" in s.lower() for s in subs)
+                has_incorporate = any("incorporat" in s.lower() for s in subs)
+                if not (has_shareholder and has_incorporate):
+                    subs.append(
+                        "What are the shareholder requirements (minimum number, such as singly or jointly, and maximum number) for incorporating a private limited company under the Company Act?"
+                    )
+
+            return subs
     except json.JSONDecodeError:
         pass
 

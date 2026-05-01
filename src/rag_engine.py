@@ -33,6 +33,7 @@ Rules:
   if not write "Not found in provided documents."
 - Rewrite evidence in your own words. Do not copy sentences verbatim.
 - Do not add any fact not present in the evidence.
+- Note: If the text says a company may be incorporated "singly", this means the minimum number of shareholders is 1.
 - Do NOT write any citations, page numbers, or filenames — \
   sources will be appended automatically.
 - If this is a follow-up question, build on the previous conversation context above.
@@ -111,6 +112,15 @@ def answer_with_retriever(
     return {
         "answer":        final_answer,
         "docs":          docs,
+        "passages": [
+            {
+                "source_file": d.metadata.get("source_file", "unknown"),
+                "page_index":  d.metadata.get("page_index",  "?"),
+                "rerank_score": d.metadata.get("rerank_score", None),
+                "text":        d.page_content,
+            }
+            for d in docs
+        ],
         "citations":     citations,
         "sub_questions": sub_questions,
     }

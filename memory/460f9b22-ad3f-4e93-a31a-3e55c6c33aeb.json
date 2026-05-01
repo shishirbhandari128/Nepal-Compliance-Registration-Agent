@@ -1,0 +1,34 @@
+[
+  {
+    "role": "user",
+    "content": "how many shareholdars are required for private company",
+    "timestamp": "2026-05-01T20:27:41.408822"
+  },
+  {
+    "role": "assistant",
+    "content": "# Shareholder Requirements for Private Companies in Nepal\n\n## Maximum Number of Shareholders\nA private company in Nepal is limited to a maximum of **fifty shareholders**. This requirement is explicitly stated in the Company Act, which outlines that \"the number of shareholders of a private company shall not exceed fifty\" [CompanyAct2006.pdf p.10].\n\n## Exclusions from Shareholder Count\nIt is important to note that employees who purchase shares under a scheme for selling shares to employees are **not counted** as shareholders for the purpose of this maximum limit. The Act specifies that \"any employee who has purchased a share of a company under a scheme of selling shares to employees... shall not be counted as a shareholder\" [CompanyAct2006.pdf p.10].\n\n## Memorandum of Association\nThe memorandum of association for a private company must include a statement regarding the maximum number of shareholders allowed, which is required by the Act [CompanyAct2006.pdf p.19].\n\n## Conclusion\nIn summary, a private company in Nepal can have up to **fifty shareholders**, with specific exclusions for certain employee shareholdings. This structure is crucial for maintaining compliance with the Company Act and understanding the regulatory framework governing private companies in Nepal.\n\nSources:\n  CompanyAct2006.pdf • p.78\n  CompanyAct2006.pdf • p.19\n  CompanyAct2006.pdf • p.142\n  CompanyAct2006.pdf • p.147\n  CompanyAct2006.pdf • p.12\n  CompanyAct2006.pdf • p.50\n  CompanyAct2006.pdf • p.10\n  CompanyAct2006.pdf • p.66\n  CompanyAct2006.pdf • p.149\n  CompanyAct2006.pdf • p.6",
+    "sub_questions": [
+      "What is the minimum number of shareholders required for a private company?",
+      "Is there a maximum limit on the number of shareholders for a private company?",
+      "What are the eligibility criteria for shareholders in a private company?",
+      "Are there specific requirements for shareholder details in a private company?",
+      "What is the minimum share capital required for a private company?",
+      "What are the ownership requirements for shareholders in a private company?",
+      "Are there any restrictions on the transfer of shares among shareholders in a private company?",
+      "What are the shareholder requirements (minimum number, such as singly or jointly, and maximum number) for incorporating a private limited company under the Company Act?"
+    ],
+    "citations": [
+      "CompanyAct2006.pdf • p.10",
+      "CompanyAct2006.pdf • p.78",
+      "CompanyAct2006.pdf • p.19",
+      "CompanyAct2006.pdf • p.142",
+      "CompanyAct2006.pdf • p.66",
+      "CompanyAct2006.pdf • p.12",
+      "CompanyAct2006.pdf • p.50",
+      "CompanyAct2006.pdf • p.147",
+      "CompanyAct2006.pdf • p.149",
+      "CompanyAct2006.pdf • p.6"
+    ],
+    "timestamp": "2026-05-01T20:29:13.317090"
+  }
+]
