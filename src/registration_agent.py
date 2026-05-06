@@ -1,139 +1,136 @@
 """
 registration_agent.py
 ---------------------
-Conversational agent that collects company registration details
-step by step and returns a filled registration form.
+Production-ready OCR registration agent (Nepal)
 
-The agent maintains its own state (collected fields) and decides
-what to ask next based on what's still missing.
-
-Fields collected:
-  - company_name
-  - company_type  (Private Limited / Public Limited / Partnership)
-  - objectives    (business purpose)
-  - registered_address
-  - directors     (list of name + citizenship_no)
-  - share_capital
-  - contact_email
-  - contact_phone
+- Uses LLM for extraction + conversation
+- Uses Python for validation (NO hallucination)
 """
 
 import json
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from .config import OPENAI_MODEL
 
 
-# All fields the form needs
+# ── Fields ───────────────────────────────────────────────────────────────────
+
 REQUIRED_FIELDS = [
-    "company_name",
+    "company_name_english",
+    "company_name_nepali",
     "company_type",
     "objectives",
-    "registered_address",
-    "directors",
-    "share_capital",
-    "contact_email",
     "contact_phone",
+    "contact_email",
+    "district",
+    "vdc_municipality",
+    "ward_no",
+    "capital_type",
+    "authorized_capital",
+    "quantity_of_shares",
+    "issued_capital",
+    "paid_up_capital",
+    "shareholders",
+]
+
+OPTIONAL_FIELDS = [
+    "fax_no",
+    "street",
+    "block_no",
+    "authorized_rate",
+    "document_files",
 ]
 
 FIELD_LABELS = {
-    "company_name":       "Company Name",
-    "company_type":       "Company Type",
-    "objectives":         "Business Objectives",
-    "registered_address": "Registered Address",
-    "directors":          "Directors",
-    "share_capital":      "Share Capital (NPR)",
-    "contact_email":      "Contact Email",
-    "contact_phone":      "Contact Phone",
+    "company_name_english": "Company Name (English)",
+    "company_name_nepali": "Company Name (Nepali)",
+    "company_type": "Company Type",
+    "objectives": "Business Objectives",
+    "contact_phone": "Phone Number",
+    "contact_email": "Email",
+    "district": "District",
+    "vdc_municipality": "Municipality",
+    "ward_no": "Ward Number",
+    "capital_type": "Capital Type",
+    "authorized_capital": "Authorized Capital",
+    "quantity_of_shares": "Number of Shares",
+    "issued_capital": "Issued Capital",
+    "paid_up_capital": "Paid-up Capital",
+    "shareholders": "Shareholders",
 }
 
 
-# ── Prompts ───────────────────────────────────────────────────────────────────
+# ── Extraction Prompt ─────────────────────────────────────────────────────────
 
 _EXTRACT_PROMPT = ChatPromptTemplate.from_template(
-    """You are extracting company registration details from a user's message.
+    """
+Extract Nepal OCR company registration details from user input.
 
-Current collected fields (already known):
-{collected}
+Rules:
+- Do NOT guess
+- Only extract if clearly provided
+- Return valid JSON only
 
-User's latest message:
+User message:
 {message}
 
-Extract any new registration details from the message and return ONLY valid JSON.
-Use null for fields not mentioned. For directors, return a list of objects with
-"name" and "citizenship_no" keys.
-
-Return exactly this structure:
+Return:
 {{
-  "company_name": null,
+  "company_name_english": null,
+  "company_name_nepali": null,
   "company_type": null,
   "objectives": null,
-  "registered_address": null,
-  "directors": null,
-  "share_capital": null,
+  "contact_phone": null,
   "contact_email": null,
-  "contact_phone": null
-}}
-"""
-)
-
-_NEXT_QUESTION_PROMPT = ChatPromptTemplate.from_template(
-    """You are a friendly Nepal company registration assistant helping a user
-fill their company registration form step by step.
-
-Fields already collected:
-{collected}
-
-Fields still needed:
-{missing}
-
-Conversation so far:
-{history}
-
-Ask for the NEXT most important missing field in a friendly, clear way.
-- Ask only ONE field at a time.
-- Give a brief example or hint when helpful.
-- If asking for directors, ask for full name and citizenship number.
-- Keep it concise — 1-3 sentences max.
-- Do NOT mention field names like "company_type" — use natural language.
-
-Return only the question, nothing else.
-"""
-)
-
-_VALIDATE_PROMPT = ChatPromptTemplate.from_template(
-    """You are validating a Nepal company registration form.
-
-Collected fields:
-{collected}
-
-Check each field for obvious issues:
-- Company name: should not be too generic or contain special characters
-- Company type: must be one of Private Limited, Public Limited, Partnership
-- Share capital: must be a positive number in NPR
-- Email: must look like a valid email
-- Phone: should be a Nepal phone number format
-- Directors: each must have name and citizenship number
-
-Return ONLY valid JSON:
-{{
-  "valid": true/false,
-  "issues": ["issue 1", "issue 2"]
+  "district": null,
+  "vdc_municipality": null,
+  "ward_no": null,
+  "capital_type": null,
+  "authorized_capital": null,
+  "quantity_of_shares": null,
+  "issued_capital": null,
+  "paid_up_capital": null,
+  "shareholders": null
 }}
 """
 )
 
 
-# ── Core agent functions ──────────────────────────────────────────────────────
+# ── Question flow ─────────────────────────────────────────────────────────────
+
+QUESTION_FLOW = REQUIRED_FIELDS
+
+
+def ask_question(field: str) -> str:
+    questions = {
+        "company_name_english": "What is your company name in English?",
+        "company_name_nepali": "What is your company name in Nepali?",
+        "company_type": "What type of company is it? (Private / Public / Partnership)",
+        "objectives": "What does your company do? (You can list multiple objectives)",
+        "contact_phone": "What is your phone number?",
+        "contact_email": "What is your email?",
+        "district": "Which district is your company located in?",
+        "vdc_municipality": "Which municipality or VDC?",
+        "ward_no": "What is the ward number?",
+        "capital_type": "What is the capital type? (e.g. Private Multiple)",
+        "authorized_capital": "What is the authorized capital (NPR)?",
+        "quantity_of_shares": "How many shares?",
+        "issued_capital": "What is the issued capital?",
+        "paid_up_capital": "What is the paid-up capital?",
+        "shareholders": "Provide shareholder details (Name, Citizenship No, Shares)",
+    }
+    return questions.get(field, f"Please provide {field}")
+
+
+# ── Extraction function ───────────────────────────────────────────────────────
 
 def extract_fields(message: str, collected: Dict) -> Dict:
-    """Extract registration fields from user message using LLM."""
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
-    collected_str = json.dumps(collected, indent=2)
+
     raw = llm.invoke(
-        _EXTRACT_PROMPT.format_messages(collected=collected_str, message=message)
+        _EXTRACT_PROMPT.format_messages(message=message)
     ).content.strip()
 
     raw = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.IGNORECASE)
@@ -141,78 +138,113 @@ def extract_fields(message: str, collected: Dict) -> Dict:
 
     try:
         extracted = json.loads(raw)
-        # Merge: only update fields that are non-null in extracted
         for key, val in extracted.items():
-            if val is not None and key in REQUIRED_FIELDS:
+            if val is not None:
                 collected[key] = val
-    except json.JSONDecodeError:
+    except:
         pass
 
     return collected
 
 
+# ── Missing fields ────────────────────────────────────────────────────────────
+
 def get_missing_fields(collected: Dict) -> List[str]:
-    """Return list of fields not yet collected."""
     return [f for f in REQUIRED_FIELDS if not collected.get(f)]
 
 
+# ── Next question ─────────────────────────────────────────────────────────────
+
 def get_next_question(collected: Dict, history: List[Dict]) -> str:
-    """Ask for the next missing field in a friendly way."""
-    missing = get_missing_fields(collected)
-    if not missing:
-        return "all_collected"
+    for field in QUESTION_FLOW:
+        if not collected.get(field):
+            return ask_question(field)
+    return "all_collected"
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0.2)
-    history_str = "\n".join(
-        f"{t['role'].capitalize()}: {t['content']}" for t in history[-6:]
-    )
-    collected_str = json.dumps(
-        {FIELD_LABELS.get(k, k): v for k, v in collected.items() if v}, indent=2
-    )
-    missing_str = ", ".join(FIELD_LABELS.get(f, f) for f in missing)
 
-    return llm.invoke(
-        _NEXT_QUESTION_PROMPT.format_messages(
-            collected=collected_str,
-            missing=missing_str,
-            history=history_str,
-        )
-    ).content.strip()
+# ── Helper: clean numbers ─────────────────────────────────────────────────────
 
+def clean_number(value):
+    if value is None:
+        return 0
+    return int(str(value).replace(",", "").strip())
+
+
+# ── Validation (NO LLM) ───────────────────────────────────────────────────────
 
 def validate_form(collected: Dict) -> Dict:
-    """Validate collected fields and return issues."""
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
-    raw = llm.invoke(
-        _VALIDATE_PROMPT.format_messages(
-            collected=json.dumps(collected, indent=2)
-        )
-    ).content.strip()
+    issues = []
 
-    raw = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.IGNORECASE)
-    raw = re.sub(r"\n?```$", "", raw, flags=re.IGNORECASE)
+    # Company name
+    name = str(collected.get("company_name_english", ""))
+    if not name:
+        issues.append("Company name is required")
+    elif re.search(r"[^\w\s\.\-&]", name):
+        issues.append("Invalid characters in company name")
 
+    # Company type
+    if collected.get("company_type") not in ["Private", "Public", "Partnership"]:
+        issues.append("Invalid company type")
+
+    # Email
+    email = str(collected.get("contact_email", ""))
+    if "@" not in email:
+        issues.append("Invalid email")
+
+    # Phone
+    phone = str(collected.get("contact_phone", ""))
+    if not re.match(r"^(98|97)\d{8}$", phone):
+        issues.append("Invalid Nepal phone number")
+
+    # Capital
     try:
-        return json.loads(raw)
-    except Exception:
-        return {"valid": True, "issues": []}
+        auth = clean_number(collected.get("authorized_capital"))
+        issued = clean_number(collected.get("issued_capital"))
+        paid = clean_number(collected.get("paid_up_capital"))
 
+        if auth < issued:
+            issues.append("Authorized capital must be >= issued capital")
+
+        if issued < paid:
+            issues.append("Issued capital must be >= paid-up capital")
+
+    except:
+        issues.append("Invalid capital values")
+
+    # Shareholders
+    sh = collected.get("shareholders", [])
+    if not sh:
+        issues.append("At least one shareholder required")
+
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues
+    }
+
+
+# ── Summary ───────────────────────────────────────────────────────────────────
 
 def build_form_summary(collected: Dict) -> str:
-    """Build a human-readable form summary."""
-    lines = ["COMPANY REGISTRATION FORM — NEPAL", "=" * 40]
-    for field in REQUIRED_FIELDS:
-        label = FIELD_LABELS.get(field, field)
-        value = collected.get(field)
-        if field == "directors" and isinstance(value, list):
-            lines.append(f"{label}:")
-            for i, d in enumerate(value, 1):
-                if isinstance(d, dict):
-                    lines.append(f"  Director {i}: {d.get('name','?')} (Citizenship: {d.get('citizenship_no','?')})")
-                else:
-                    lines.append(f"  Director {i}: {d}")
-        else:
-            lines.append(f"{label}: {value or '—'}")
-    lines.append("=" * 40)
-    lines.append("Note: This form summary is for review. Submit at ocr.gov.np")
-    return "\n".join(lines)
+    return f"""
+🏢 COMPANY REGISTRATION SUMMARY
+
+Name: {collected.get('company_name_english')}
+Type: {collected.get('company_type')}
+
+Location:
+{collected.get('district')} - {collected.get('vdc_municipality')} (Ward {collected.get('ward_no')})
+
+Capital:
+Authorized: NPR {collected.get('authorized_capital')}
+Issued: NPR {collected.get('issued_capital')}
+Paid-up: NPR {collected.get('paid_up_capital')}
+
+Contact:
+Email: {collected.get('contact_email')}
+Phone: {collected.get('contact_phone')}
+
+Shareholders:
+{collected.get('shareholders')}
+
+⚠️ Please review before submission.
+"""

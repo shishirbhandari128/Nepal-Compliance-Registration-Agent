@@ -556,7 +556,13 @@
 </div>
 
 <script>
-const API = 'http://localhost:8000';
+// Uses nginx reverse proxy — works on any host/port without hardcoding.
+// Override with ?api=http://host:port for direct access.
+const API = (() => {
+  const override = new URLSearchParams(window.location.search).get('api');
+  if (override) return override.replace(/\/+$/, '');
+  return window.location.origin + '/api';
+})();
 let sessionId = null;
 let isLoading = false;
 
@@ -1067,11 +1073,293 @@ function renderMarkdownLite(text) {
   return html;
 }
 function fmtInline(text) {
-  // Escape first, then apply minimal inline formatting.
   let s = escHtml(text);
-  // **bold**
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   return s;
+}
+
+// ── Registration Modal ────────────────────────────────────────────────────────
+
+let regSessionId = null;
+let regLoading   = false;
+const TOTAL_FIELDS = 8;
+const FILE_TRIGGER_KEYWORDS = ['citizenship', 'document', 'certificate', 'passport', 'id proof', 'upload'];
+
+function openRegModal() {
+  regSessionId = null;
+  regLoading   = false;
+  document.getElementById('regChat').innerHTML             = '';
+  document.getElementById('regInput').value                = '';
+  document.getElementById('fieldsCollected').style.display = 'none';
+  document.getElementById('fieldsCollected').innerHTML     = '';
+  document.getElementById('progressFill').style.width      = '0%';
+  document.getElementById('progressLabel').textContent     = 'Starting…';
+  document.getElementById('progressCount').textContent     = '0 / ' + TOTAL_FIELDS + ' fields';
+  document.getElementById('regActions').style.display      = 'flex';
+  document.getElementById('regOverlay').classList.add('open');
+  sendRegMessage('__start__');
+}
+
+function closeRegModal() {
+  document.getElementById('regOverlay').classList.remove('open');
+}
+
+document.getElementById('regOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeRegModal();
+});
+
+function handleRegKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendRegMessage(); }
+}
+
+function autoResizeReg(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+function appendRegMsg(role, html) {
+  const chat = document.getElementById('regChat');
+  const el   = document.createElement('div');
+  el.className = `reg-msg ${role}`;
+  const avatar = role === 'user' ? 'U' : '🏢';
+  el.innerHTML = `<div class="reg-avatar">${avatar}</div><div class="reg-bubble">${html}</div>`;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendRegTyping() {
+  const chat = document.getElementById('regChat');
+  const el   = document.createElement('div');
+  el.id = 'regTyping'; el.className = 'reg-msg agent';
+  el.innerHTML = `
+    <div class="reg-avatar">🏢</div>
+    <div class="reg-bubble" style="display:flex;align-items:center;gap:6px;padding:10px 12px">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>`;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function removeRegTyping() {
+  const el = document.getElementById('regTyping');
+  if (el) el.remove();
+}
+
+function updateRegProgress(collected, missing) {
+  const filled = TOTAL_FIELDS - missing.length;
+  const pct    = Math.round((filled / TOTAL_FIELDS) * 100);
+  document.getElementById('progressFill').style.width  = pct + '%';
+  document.getElementById('progressCount').textContent = filled + ' / ' + TOTAL_FIELDS + ' fields';
+  document.getElementById('progressLabel').textContent = missing.length
+    ? 'Still needed: ' + missing.slice(0, 3).join(', ') + (missing.length > 3 ? '…' : '')
+    : 'All fields collected ✓';
+  const keys = Object.keys(collected).filter(k => collected[k]);
+  if (keys.length) {
+    const fc = document.getElementById('fieldsCollected');
+    fc.style.display = 'flex';
+    fc.innerHTML = keys.map(k => {
+      const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      return `<span class="field-chip">✓ ${escHtml(label)}</span>`;
+    }).join('');
+  }
+}
+
+function needsFileUpload(reply) {
+  const lower = reply.toLowerCase();
+  return FILE_TRIGGER_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function showFileUploadPrompt() {
+  if (document.getElementById('regFileRow')) return;
+  const row = document.createElement('div');
+  row.id = 'regFileRow';
+  row.style.cssText = 'padding:6px 20px 0;display:flex;align-items:center;gap:8px;flex-shrink:0;';
+  row.innerHTML = `
+    <label style="font-family:var(--mono);font-size:10px;color:var(--text-dim);cursor:pointer;
+      background:var(--border);padding:5px 10px;border-radius:5px;border:1px dashed var(--muted);">
+      📎 Attach document
+      <input type="file" id="regFileInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none"
+        onchange="handleRegFileAttach(this)">
+    </label>
+    <span id="regFileName" style="font-family:var(--mono);font-size:10px;color:var(--text-dim)"></span>`;
+  document.querySelector('.modal-actions').insertAdjacentElement('beforebegin', row);
+}
+
+function handleRegFileAttach(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('regFileName').textContent = '📄 ' + file.name;
+  const ta = document.getElementById('regInput');
+  if (!ta.value.trim()) ta.value = file.name;
+  autoResizeReg(ta); ta.focus();
+}
+
+function showFormResult(formSummary) {
+  document.getElementById('regActions').style.display = 'none';
+  const chat = document.getElementById('regChat');
+
+  const pre = document.createElement('pre');
+  pre.className = 'form-result';
+  pre.innerHTML = escHtml(formSummary)
+    .replace(/^(={3,})/gm, '<span style="color:var(--border)">$1</span>')
+    .replace(/^([A-Za-z ]+(?:\([^)]*\))?):( )/gm, '<strong style="color:var(--accent)">$1</strong>:$2');
+  const formWrapper = document.createElement('div');
+  formWrapper.className = 'reg-msg agent';
+  formWrapper.innerHTML = `<div class="reg-avatar">🏢</div><div class="reg-bubble" style="max-width:95%"></div>`;
+  formWrapper.querySelector('.reg-bubble').appendChild(pre);
+  chat.appendChild(formWrapper);
+
+  const stepsWrapper = document.createElement('div');
+  stepsWrapper.className = 'reg-msg agent';
+  stepsWrapper.innerHTML = `
+    <div class="reg-avatar">🏢</div>
+    <div class="reg-bubble" style="max-width:95%">
+      <div style="font-family:var(--sans);font-weight:700;font-size:13px;margin-bottom:10px;color:var(--accent)">
+        🤖 What happens next — Half Manual, Half Automated
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <span style="background:#1a2a1a;border:1px solid #2a3a24;border-radius:50%;width:20px;height:20px;
+            display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0">1</span>
+          <div>
+            <div style="font-family:var(--sans);font-weight:600;font-size:12px;color:var(--text)">You do manually — Create Account</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+              Go to <a href="https://www.ocr.gov.np/CRO/" target="_blank" style="color:var(--accent2);text-decoration:none">ocr.gov.np</a>,
+              click <strong>Create User</strong>, complete the CAPTCHA and verify your email.
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <span style="background:#1a2a1a;border:1px solid #2a3a24;border-radius:50%;width:20px;height:20px;
+            display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0">2</span>
+          <div>
+            <div style="font-family:var(--sans);font-weight:600;font-size:12px;color:var(--text)">Bot does — Name Reservation + Form Fill</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+              Once logged in, click <strong>Launch OCR Bot</strong> below. The bot opens a browser,
+              navigates to the Name Reservation form, and pre-fills all registration fields automatically.
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <span style="background:#1a2a1a;border:1px solid #2a3a24;border-radius:50%;width:20px;height:20px;
+            display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--accent);flex-shrink:0">3</span>
+          <div>
+            <div style="font-family:var(--sans);font-weight:600;font-size:12px;color:var(--text)">You do manually — Upload Documents & Submit</div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+              Upload citizenship certificates and required documents, then review and click <strong>Submit</strong>.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button onclick="launchOCRBot()" id="launchBotBtn" style="
+          background:var(--accent);border:none;color:#0d0f0e;font-family:var(--sans);
+          font-size:12px;font-weight:700;padding:8px 16px;border-radius:7px;cursor:pointer;">
+          🚀 Launch OCR Bot
+        </button>
+        <button onclick="downloadForm(${JSON.stringify(formSummary)})" style="
+          background:#1a2a1a;border:1px solid #2a3a24;color:var(--accent);font-family:var(--sans);
+          font-size:12px;font-weight:600;padding:8px 14px;border-radius:7px;cursor:pointer;">
+          ⬇ Download Form (.txt)
+        </button>
+      </div>
+      <div id="botStatusMsg" style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--text-dim);display:none"></div>
+    </div>`;
+  chat.appendChild(stepsWrapper);
+  chat.scrollTop = 9999;
+}
+
+function downloadForm(formSummary) {
+  const blob = new Blob([formSummary], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'company_registration_nepal.txt';
+  a.click();
+}
+
+async function launchOCRBot() {
+  const btn    = document.getElementById('launchBotBtn');
+  const status = document.getElementById('botStatusMsg');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Launching…';
+  status.style.display = 'block';
+  status.style.color = 'var(--text-dim)';
+  status.textContent = 'Sending request to backend… A browser window will open on the server machine.';
+  try {
+    const resp = await fetch(`${API}/register/launch-bot`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ session_id: regSessionId }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Launch failed');
+    }
+    btn.textContent = '✅ Bot Launched';
+    status.style.color = 'var(--accent2)';
+    status.textContent = '✅ Browser opened! Complete the CAPTCHA manually, then press ENTER in the terminal when prompted.';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '🚀 Launch OCR Bot';
+    status.style.color = 'var(--danger)';
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function sendRegMessage(bootstrap) {
+  const isStart = bootstrap === '__start__';
+  const input   = document.getElementById('regInput');
+  const message = isStart ? 'Hello, I want to register a company.' : input.value.trim();
+  if (!isStart && (!message || regLoading)) return;
+
+  regLoading = true;
+  document.getElementById('regSendBtn').disabled = true;
+
+  if (!isStart) {
+    appendRegMsg('user', escHtml(message));
+    input.value = ''; autoResizeReg(input);
+  }
+
+  appendRegTyping();
+
+  try {
+    const resp = await fetch(`${API}/register/chat`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ message, session_id: regSessionId }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'API error');
+    }
+    const data = await resp.json();
+    regSessionId = data.session_id;
+    removeRegTyping();
+    updateRegProgress(data.collected || {}, data.missing || []);
+
+    if (data.complete && data.form_summary) {
+      appendRegMsg('agent', '✅ All details collected! Here is your filled registration form:');
+      showFormResult(data.form_summary);
+    } else if (data.issues && data.issues.length) {
+      const issueHtml = '<strong style="color:var(--danger)">⚠ Issues found:</strong><ul style="margin:6px 0 0 16px">'
+        + data.issues.map(i => `<li style="color:var(--danger)">${escHtml(i)}</li>`).join('')
+        + '</ul><div style="margin-top:6px">' + escHtml(data.reply) + '</div>';
+      appendRegMsg('agent', issueHtml);
+    } else {
+      appendRegMsg('agent', escHtml(data.reply));
+      if (needsFileUpload(data.reply)) showFileUploadPrompt();
+    }
+  } catch (e) {
+    removeRegTyping();
+    appendRegMsg('agent', `<span style="color:var(--danger)">Error: ${escHtml(e.message)}</span>`);
+  } finally {
+    regLoading = false;
+    document.getElementById('regSendBtn').disabled = false;
+    if (!document.getElementById('regActions').style.display.includes('none')) {
+      document.getElementById('regInput').focus();
+    }
+  }
 }
 </script>
 

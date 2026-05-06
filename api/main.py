@@ -325,6 +325,7 @@ def registration_chat(req: RegistrationMessage):
         extract_fields, get_missing_fields,
         get_next_question, validate_form,
         build_form_summary, FIELD_LABELS,
+        REQUIRED_FIELDS,
     )
     sid = req.session_id or str(uuid.uuid4())
     if sid not in _reg_sessions:
@@ -332,9 +333,40 @@ def registration_chat(req: RegistrationMessage):
 
     state   = _reg_sessions[sid]
     history = state["history"]
-    history.append({"role": "user", "content": req.message})
 
-    state["collected"] = extract_fields(req.message, state["collected"])
+    # Bootstrap greeting — don't extract fields, just ask the first question
+    is_start = req.message == "Hello, I want to register a company."
+    if not is_start:
+        history.append({"role": "user", "content": req.message})
+
+    # Extract fields from user message (skip on bootstrap)
+    if not is_start:
+        before = set(k for k, v in state["collected"].items() if v)
+        state["collected"] = extract_fields(req.message, state["collected"])
+        after  = set(k for k, v in state["collected"].items() if v)
+
+        # Fallback: if LLM extracted nothing new, store the raw answer
+        # directly against the current missing field — covers ALL field types
+        if before == after:
+            missing_now = get_missing_fields(state["collected"])
+            if missing_now:
+                current_field = missing_now[0]
+                raw_val = req.message.strip()
+
+                if current_field == "objectives":
+                    # Store as a list of objective dicts that ocr_bot understands
+                    lines = [l.strip() for l in raw_val.replace(";", "\n").splitlines() if l.strip()]
+                    state["collected"]["objectives"] = [
+                        {"nsic_code": "", "description": line} for line in lines
+                    ] if lines else [{"nsic_code": "", "description": raw_val}]
+                elif current_field == "shareholders":
+                    # Store raw string — user will clarify per-shareholder later
+                    state["collected"]["shareholders"] = raw_val
+                else:
+                    # Scalar fields — strip currency symbols
+                    clean = raw_val.replace("NPR", "").replace("Rs.", "").replace(",", "").strip()
+                    state["collected"][current_field] = clean
+
     missing = get_missing_fields(state["collected"])
 
     if not missing:
@@ -359,3 +391,28 @@ def registration_chat(req: RegistrationMessage):
 def clear_registration_session(session_id: str):
     _reg_sessions.pop(session_id, None)
     return {"session_id": session_id, "cleared": True}
+
+
+@app.post("/register/launch-bot", tags=["Registration"])
+def launch_bot(req: dict):
+    """Launch OCR bot in a background thread. Returns immediately."""
+    import threading
+    sid = req.get("session_id")
+    if not sid or sid not in _reg_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    collected = _reg_sessions[sid].get("collected", {})
+    if not collected:
+        raise HTTPException(status_code=400, detail="No collected data for this session")
+
+    collected_snapshot = dict(collected)
+
+    def _run_bot():
+        try:
+            from src.ocr_bot import OCRBot
+            bot = OCRBot(headless=False)
+            bot.run(collected_snapshot)
+        except Exception as e:
+            print(f"[OCRBot] Error: {e}")
+
+    threading.Thread(target=_run_bot, daemon=True).start()
+    return {"status": "launched", "session_id": sid}
