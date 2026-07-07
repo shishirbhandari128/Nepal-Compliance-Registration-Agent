@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI
 from .config import OPENAI_MODEL
 
 
-# ── Fields ───────────────────────────────────────────────────────────────────
+                                                                               
 
 REQUIRED_FIELDS = [
     "company_name_english",
@@ -62,7 +62,7 @@ FIELD_LABELS = {
 }
 
 
-# ── Extraction Prompt ─────────────────────────────────────────────────────────
+                                                                                
 
 _EXTRACT_PROMPT = ChatPromptTemplate.from_template(
     """
@@ -98,7 +98,7 @@ Return:
 )
 
 
-# ── Question flow ─────────────────────────────────────────────────────────────
+                                                                                
 
 QUESTION_FLOW = REQUIRED_FIELDS
 
@@ -124,7 +124,7 @@ def ask_question(field: str) -> str:
     return questions.get(field, f"Please provide {field}")
 
 
-# ── Extraction function ───────────────────────────────────────────────────────
+                                                                                
 
 def extract_fields(message: str, collected: Dict) -> Dict:
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
@@ -147,13 +147,13 @@ def extract_fields(message: str, collected: Dict) -> Dict:
     return collected
 
 
-# ── Missing fields ────────────────────────────────────────────────────────────
+                                                                                
 
 def get_missing_fields(collected: Dict) -> List[str]:
     return [f for f in REQUIRED_FIELDS if not collected.get(f)]
 
 
-# ── Next question ─────────────────────────────────────────────────────────────
+                                                                                
 
 def get_next_question(collected: Dict, history: List[Dict]) -> str:
     for field in QUESTION_FLOW:
@@ -162,7 +162,7 @@ def get_next_question(collected: Dict, history: List[Dict]) -> str:
     return "all_collected"
 
 
-# ── Helper: clean numbers ─────────────────────────────────────────────────────
+                                                                                
 
 def clean_number(value):
     if value is None:
@@ -170,33 +170,33 @@ def clean_number(value):
     return int(str(value).replace(",", "").strip())
 
 
-# ── Validation (NO LLM) ───────────────────────────────────────────────────────
+                                                                                
 
 def validate_form(collected: Dict) -> Dict:
     issues = []
 
-    # Company name
+                  
     name = str(collected.get("company_name_english", ""))
     if not name:
         issues.append("Company name is required")
     elif re.search(r"[^\w\s\.\-&]", name):
         issues.append("Invalid characters in company name")
 
-    # Company type
+                  
     if collected.get("company_type") not in ["Private", "Public", "Partnership"]:
         issues.append("Invalid company type")
 
-    # Email
+           
     email = str(collected.get("contact_email", ""))
     if "@" not in email:
         issues.append("Invalid email")
 
-    # Phone
+           
     phone = str(collected.get("contact_phone", ""))
     if not re.match(r"^(98|97)\d{8}$", phone):
         issues.append("Invalid Nepal phone number")
 
-    # Capital
+             
     try:
         auth = clean_number(collected.get("authorized_capital"))
         issued = clean_number(collected.get("issued_capital"))
@@ -211,7 +211,7 @@ def validate_form(collected: Dict) -> Dict:
     except:
         issues.append("Invalid capital values")
 
-    # Shareholders
+                  
     sh = collected.get("shareholders", [])
     if not sh:
         issues.append("At least one shareholder required")
@@ -222,7 +222,7 @@ def validate_form(collected: Dict) -> Dict:
     }
 
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+                                                                                
 
 def build_form_summary(collected: Dict) -> str:
     return f"""

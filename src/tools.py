@@ -23,7 +23,7 @@ from langchain_openai import ChatOpenAI
 from .config import EMBEDDING_MODEL, OPENAI_MODEL
 
 
-# ── Embedding singleton — loads weights ONCE, thread-safe ────────────────────
+                                                                               
 
 _embeddings_instance = None
 _embeddings_lock = threading.Lock()
@@ -34,7 +34,7 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     global _embeddings_instance
     if _embeddings_instance is None:
         with _embeddings_lock:
-            if _embeddings_instance is None:          # double-checked locking
+            if _embeddings_instance is None:                                  
                 _embeddings_instance = HuggingFaceEmbeddings(
                     model_name=EMBEDDING_MODEL,
                     encode_kwargs={"normalize_embeddings": True},
@@ -42,7 +42,7 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     return _embeddings_instance
 
 
-# ── Vectorstore helpers ───────────────────────────────────────────────────────
+                                                                                
 
 def _pdf_hash(pdf_path: Path) -> str:
     h = hashlib.md5()
@@ -109,7 +109,7 @@ def get_or_build_vectorstore(pdf: Path, chunks_fn) -> Chroma:
     if vectorstore_is_fresh(pdf, persist):
         print(f"    [cache hit]  {pdf.name}")
         db = load_vectorstore(persist, collection)
-        # If a previous build wrote an empty / corrupt DB, force rebuild.
+                                                                         
         if _safe_collection_count(db) > 0:
             return db
         print(f"    [cache invalid] {pdf.name} — empty vectorstore, rebuilding…")
@@ -121,7 +121,7 @@ def get_or_build_vectorstore(pdf: Path, chunks_fn) -> Chroma:
 
     chunks = chunks_fn()
     db = build_vectorstore(chunks, persist, collection)
-    # Only mark cache fresh if we actually stored embeddings.
+                                                             
     if _safe_collection_count(db) > 0:
         save_pdf_hash(pdf, persist)
     else:
@@ -129,7 +129,7 @@ def get_or_build_vectorstore(pdf: Path, chunks_fn) -> Chroma:
     return db
 
 
-# ── PDF summary cache (used by router for smart PDF selection) ─────────────
+                                                                             
 
 _SUMMARY_PROMPT = ChatPromptTemplate.from_template(
     """Read the following text extracted from a legal/regulatory PDF document.
@@ -179,12 +179,12 @@ def build_pdf_options_block(pdf_paths: List[Path]) -> str:
     return "\n".join(lines)
 
 
-# ── Merger helpers ────────────────────────────────────────────────────────────
+                                                                                
 
 def format_per_doc_block(answers: List[Dict]) -> str:
     blocks = []
     for item in answers:
-        # Strip the Sources block already appended by rag_engine
+                                                                
         answer_text = item["answer"].split("\nSources:")[0].strip()
         blocks.append(f"=== {item['file']} ===\n{answer_text}")
     return "\n\n".join(blocks)

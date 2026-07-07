@@ -18,11 +18,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 
-# ── Backend selection ─────────────────────────────────────────────────────────
-# Set REDIS_URL in .env to enable Redis, otherwise falls back to disk.
+                                                                                
+                                                                      
 
 REDIS_URL   = os.getenv("REDIS_URL", "")
-SESSION_TTL = int(os.getenv("SESSION_TTL_SECONDS", 3600))   # 1 hour default
+SESSION_TTL = int(os.getenv("SESSION_TTL_SECONDS", 3600))                   
 MEMORY_DIR  = Path("memory")
 
 
@@ -50,11 +50,11 @@ class ConversationMemory:
         self._redis     = _get_redis()
         self._key       = f"session:{session_id}"
 
-        # Disk fallback path
+                            
         MEMORY_DIR.mkdir(exist_ok=True)
         self._disk_path = MEMORY_DIR / f"{session_id}.json"
 
-    # ── Storage helpers ───────────────────────────────────────────────────────
+                                                                                
 
     def _read(self) -> List[Dict]:
         if self._redis:
@@ -76,7 +76,7 @@ class ConversationMemory:
                 encoding="utf-8",
             )
 
-    # ── Public API ────────────────────────────────────────────────────────────
+                                                                                
 
     def add_user_turn(self, question: str):
         history = self._read()
@@ -140,7 +140,7 @@ class ConversationMemory:
         return "redis" if self._redis else "disk"
 
 
-# ── Session store ─────────────────────────────────────────────────────────────
+                                                                                
 
 _sessions: Dict[str, ConversationMemory] = {}
 
@@ -156,5 +156,5 @@ def delete_session(session_id: str):
         _sessions[session_id].clear()
         del _sessions[session_id]
     else:
-        # Still try to clear from storage even if not in process memory
+                                                                       
         ConversationMemory(session_id).clear()

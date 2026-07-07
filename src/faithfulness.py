@@ -48,14 +48,14 @@ def check_and_fix(answer: str, docs: List[Document]) -> Dict:
     if not docs:
         return {"answer": answer, "was_corrected": False}
 
-    # Build evidence block — capped to avoid context overflow
+                                                             
     chunk_text = "\n\n".join(
         f"[{d.metadata.get('source_file','?')} p.{d.metadata.get('page_index','?')}]\n"
         f"{d.page_content}"
         for d in docs[:15]
     )
 
-    # Only check the answer body — preserve Sources block untouched
+                                                                   
     parts        = answer.split("\nSources:")
     answer_body  = parts[0].strip()
     sources_tail = ("\nSources:" + parts[1]) if len(parts) > 1 else ""

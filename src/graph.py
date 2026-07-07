@@ -33,7 +33,7 @@ from .faithfulness import check_and_fix
 from .config import OPENAI_MODEL
 
 
-# ── Prompts ───────────────────────────────────────────────────────────────────
+                                                                                
 
 _RESOLVE_PROMPT = ChatPromptTemplate.from_template(
     """You are a question resolver. Rewrite the user's follow-up question as a
@@ -99,7 +99,7 @@ Write the final answer now:
 )
 
 
-# ── Node 1: Decompose ─────────────────────────────────────────────────────────
+                                                                                
 
 def node_decompose(state: PipelineState) -> dict:
     print("\n[node: decompose]")
@@ -129,7 +129,7 @@ def node_decompose(state: PipelineState) -> dict:
     }
 
 
-# ── Node 2: Route ─────────────────────────────────────────────────────────────
+                                                                                
 
 def node_route(state: PipelineState) -> dict:
     print("\n[node: route]")
@@ -192,7 +192,7 @@ def node_route(state: PipelineState) -> dict:
     }
 
 
-# ── Node 3: Retrieve & Answer ─────────────────────────────────────────────────
+                                                                                
 
 def node_retrieve_and_answer(state: PipelineState) -> dict:
     print("\n[node: retrieve_and_answer]")
@@ -218,7 +218,7 @@ def node_retrieve_and_answer(state: PipelineState) -> dict:
             "answer":        result["answer"],
             "citations":     result["citations"],
             "sub_questions": sub_questions,
-            "docs":          result["docs"],   # raw chunks — passed to faithfulness
+            "docs":          result["docs"],                                        
         }
 
     print(f"  Processing {len(selected_pdfs)} PDF(s) in parallel...")
@@ -247,10 +247,10 @@ def node_retrieve_and_answer(state: PipelineState) -> dict:
 
     valid_results = [r for r in results if r is not None]
 
-    # Collect all raw docs across all PDFs for the faithfulness checker
+                                                                       
     all_docs = [doc for r in valid_results for doc in r.get("docs", [])]
 
-    # Strip docs from per_doc_answers before storing in state (not serializable)
+                                                                                
     per_doc_answers = [
         {k: v for k, v in r.items() if k != "docs"}
         for r in valid_results
@@ -262,13 +262,13 @@ def node_retrieve_and_answer(state: PipelineState) -> dict:
     }
 
 
-# ── Node 4: Specialist Agents ─────────────────────────────────────────────────
+                                                                                
 
 def node_specialist_agents(state: PipelineState) -> dict:
     print("\n[node: specialist_agents]")
     per_doc_answers = state["per_doc_answers"]
 
-    # Feed specialists the base RAG answer — grounded in retrieved chunks
+                                                                         
     base_answer = "\n\n".join(
         f"--- {item['file']} ---\n{item['answer'].split(chr(10)+'Sources:')[0]}"
         for item in per_doc_answers
@@ -283,7 +283,7 @@ def node_specialist_agents(state: PipelineState) -> dict:
     return {"specialist_outputs": specialist_outputs}
 
 
-# ── Node 5: Merge ─────────────────────────────────────────────────────────────
+                                                                                
 
 def node_merge(state: PipelineState) -> dict:
     print("\n[node: merge]")
@@ -300,7 +300,7 @@ def node_merge(state: PipelineState) -> dict:
     else:
         base_answer = format_per_doc_block(per_doc_answers)
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)  # temp=0 for faithfulness
+    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)                           
     merged_text = llm.invoke(
         _MERGER_PROMPT.format_messages(
             question=state["resolved_question"],
@@ -316,7 +316,7 @@ def node_merge(state: PipelineState) -> dict:
     return {"final_answer": final_answer, "all_citations": all_citations}
 
 
-# ── Node 6: Faithfulness check ────────────────────────────────────────────────
+                                                                                
 
 def node_faithfulness(state: PipelineState) -> dict:
     print("\n[node: faithfulness]")
@@ -327,7 +327,7 @@ def node_faithfulness(state: PipelineState) -> dict:
     else:
         print("  ✓ Answer is faithful to source chunks")
 
-    # Save to memory only after faithfulness check
+                                                  
     session = get_session(state["session_id"])
     session.add_assistant_turn(
         result["answer"],
@@ -338,7 +338,7 @@ def node_faithfulness(state: PipelineState) -> dict:
     return {"final_answer": result["answer"]}
 
 
-# ── Node 7: Save ──────────────────────────────────────────────────────────────
+                                                                                
 
 def node_save(state: PipelineState) -> dict:
     print("\n" + "=" * 70)
@@ -366,7 +366,7 @@ def node_save(state: PipelineState) -> dict:
     return {}
 
 
-# ── Build graph ───────────────────────────────────────────────────────────────
+                                                                                
 
 def build_graph():
     g = StateGraph(PipelineState)

@@ -28,7 +28,7 @@ class OCRBot:
         self.headless = headless
         self.page: Page = None
 
-    # ── Entry point ───────────────────────────────────────────────────────────
+                                                                                
 
     def run(self, data: dict, callback=None):
         """
@@ -53,7 +53,7 @@ class OCRBot:
                 input("\n[OCR Bot] Press ENTER to close browser...")
                 browser.close()
 
-    # ── Step 1: Open site ─────────────────────────────────────────────────────
+                                                                                
 
     def _step1_open_site(self):
         self._cb("open", "Opening OCR e-Services...")
@@ -61,7 +61,7 @@ class OCRBot:
         self.page.wait_for_load_state("networkidle")
         self._cb("open", "Site loaded at https://www.ocr.gov.np/CRO/")
 
-    # ── Step 2: Manual login (CAPTCHA cannot be automated) ────────────────────
+                                                                                
 
     def _step2_manual_login(self):
         self._cb("login", (
@@ -77,12 +77,12 @@ class OCRBot:
         input("\n>>> Press ENTER after you are logged in: ")
         self._cb("login", "Login confirmed. Proceeding to name reservation...")
 
-    # ── Step 3: Name Reservation ──────────────────────────────────────────────
+                                                                                
 
     def _step3_name_reservation(self, data: dict):
         self._cb("name_reservation", "Navigating to Name Reservation form...")
 
-        # Click Name Check/Reservation menu
+                                           
         try:
             self.page.click("text=Name Check/Reservation", timeout=10000)
             self.page.wait_for_load_state("networkidle")
@@ -92,15 +92,15 @@ class OCRBot:
             self._cb("name_reservation", "Could not find menu automatically. Please navigate to Name Check/Reservation > Name Reservation Request Form manually.")
             input(">>> Press ENTER when you are on the Name Reservation Request Form: ")
 
-        # ── Request Name Details ──────────────────────────────────────────────
+                                                                                
 
-        # Company Type dropdown
+                               
         company_type = data.get("company_type", "Private")
         try:
             self.page.select_option("select", label=company_type, timeout=5000)
         except:
             try:
-                # Try by value — OCR uses Nepali labels in dropdown
+                                                                   
                 type_map = {
                     "Private": "प्राइभेट",
                     "Public": "पब्लिक",
@@ -111,31 +111,31 @@ class OCRBot:
             except:
                 self._cb("name_reservation", f"⚠ Could not set company type to '{company_type}' — please set it manually.")
 
-        # Company Name (English)
+                                
         company_name_en = data.get("company_name_english", data.get("company_name", ""))
         self._safe_fill("input[name*='CompanyNameEnglish'], input[placeholder*='English']", company_name_en)
 
-        # Company Name (Nepali) — optional if user provided it
+                                                              
         company_name_np = data.get("company_name_nepali", "")
         if company_name_np:
             self._safe_fill("input[name*='CompanyNameNepali'], input[placeholder*='Nepali']", company_name_np)
 
-        # ── Objective Details ─────────────────────────────────────────────────
-        # Each objective needs an NSIC Code + description
+                                                                                
+                                                         
         objectives = data.get("objectives", [])
         if isinstance(objectives, str):
             objectives = [{"nsic_code": "", "description": objectives}]
 
         for i, obj in enumerate(objectives):
             if i > 0:
-                # Click Add Objective for extra rows
+                                                    
                 try:
                     self.page.click("text=Add Objective", timeout=3000)
                     time.sleep(0.5)
                 except:
                     pass
 
-            # Fill NSIC code if provided
+                                        
             nsic = obj.get("nsic_code", "") if isinstance(obj, dict) else ""
             desc = obj.get("description", obj) if isinstance(obj, dict) else str(obj)
 
@@ -166,52 +166,52 @@ class OCRBot:
         ))
         input("\n>>> Press ENTER after your company name has been APPROVED by OCR: ")
 
-    # ── Step 4: Confirm approval and navigate to registration ─────────────────
+                                                                                
 
     def _step4_wait_for_approval(self):
         self._cb("approval", "Good. Navigating to the company registration form...")
 
         try:
-            # After approval, homepage shows "Company Name is Approved !!!" and a link
+                                                                                      
             self.page.goto(SITE_URL, timeout=30000)
             self.page.wait_for_load_state("networkidle")
             time.sleep(2)
 
-            # Click the Registration Form link
+                                              
             self.page.click("text=Registration Form", timeout=10000)
             self.page.wait_for_load_state("networkidle")
         except PlaywrightTimeout:
             self._cb("approval", "Could not find Registration Form link automatically. Please navigate to it manually.")
             input(">>> Press ENTER when you are on the Company Registration Form: ")
 
-    # ── Step 5: Fill Company Registration Form ────────────────────────────────
+                                                                                
 
     def _step5_company_registration(self, data: dict):
         self._cb("registration", "Filling Company Registration Form...")
         time.sleep(2)
 
-        # ── Company Details (Step 1 in PDF) ───────────────────────────────────
-        # Company Name fields are pre-filled (locked) — skip them
+                                                                                
+                                                                 
 
-        # Telephone
+                   
         self._safe_fill(
             "input[name*='Telephone'], input[placeholder*='Telephone']",
             data.get("contact_phone", "")
         )
 
-        # Fax (optional)
+                        
         self._safe_fill(
             "input[name*='Fax'], input[placeholder*='Fax']",
             data.get("fax_no", "")
         )
 
-        # Company Email
+                       
         self._safe_fill(
             "input[name*='Email'], input[type='email']",
             data.get("contact_email", "")
         )
 
-        # Address — District
+                            
         district = data.get("district", "")
         if district:
             try:
@@ -219,7 +219,7 @@ class OCRBot:
             except:
                 self._cb("registration", f"⚠ Could not set district '{district}' — please set manually.")
 
-        # VDC/Municipality
+                          
         vdc = data.get("vdc_municipality", "")
         if vdc:
             try:
@@ -233,8 +233,8 @@ class OCRBot:
 
         self._cb("registration", "✓ Company details filled.")
 
-        # ── Capital Details (Step 4 in PDF) ───────────────────────────────────
-        # Select Company Type in Capital Details dropdown
+                                                                                
+                                                         
         try:
             capital_type = data.get("capital_type", data.get("company_type_capital", ""))
             if capital_type:
@@ -243,11 +243,11 @@ class OCRBot:
                     label=capital_type,
                     timeout=5000,
                 )
-                time.sleep(1)  # wait for capital structure to load
+                time.sleep(1)                                      
         except:
             self._cb("registration", "⚠ Could not set capital company type — please set manually.")
 
-        # Capital Structure fields
+                                  
         self._safe_fill_by_label("Authorized Capital",  data.get("authorized_capital", ""))
         self._safe_fill_by_label("Authorized Rate",     data.get("authorized_rate", "100"))
         self._safe_fill_by_label("Quantity Of Shares",  data.get("quantity_of_shares", ""))
@@ -256,16 +256,16 @@ class OCRBot:
 
         self._cb("registration", "✓ Capital structure filled.")
 
-        # ── Share Holders (Step 5 in PDF) ─────────────────────────────────────
+                                                                                
         shareholders = data.get("shareholders", data.get("directors", []))
         for i, sh in enumerate(shareholders):
             self._add_shareholder(sh, index=i)
 
         self._cb("registration", f"✓ {len(shareholders)} shareholder(s) added.")
 
-        # ── Documents (Step 6 in PDF) ─────────────────────────────────────────
+                                                                                
         doc_files = data.get("document_files", {})
-        # doc_files: { "प्रबन्धपत्र": "/path/to/file.pdf", ... }
+                                                                
         if doc_files:
             self._upload_documents(doc_files)
         else:
@@ -282,7 +282,7 @@ class OCRBot:
             "DO NOT submit yet — review first."
         ))
 
-    # ── Step 6: Done ─────────────────────────────────────────────────────────
+                                                                               
 
     def _step6_done(self):
         self._cb("done", (
@@ -295,15 +295,15 @@ class OCRBot:
             "You will receive a confirmation email after submission."
         ))
 
-    # ── Shareholder helper ────────────────────────────────────────────────────
+                                                                                
 
     def _add_shareholder(self, sh: dict, index: int):
         try:
-            # Click Add Company Share Holder button
+                                                   
             self.page.click("text=Add Company Share Holder", timeout=5000)
             time.sleep(1)
 
-            # Share Holder Type — Person or Company
+                                                   
             sh_type = sh.get("type", "Person")
             try:
                 self.page.select_option(
@@ -316,26 +316,26 @@ class OCRBot:
                 pass
 
             if sh_type == "Person":
-                # Name fields
+                             
                 self._safe_fill("input[name*='FirstName'][lang='en'], input[placeholder*='First'][lang='en']", sh.get("first_name", ""))
                 self._safe_fill("input[name*='MiddleName'][lang='en']",                                        sh.get("middle_name", ""))
                 self._safe_fill("input[name*='LastName'][lang='en'], input[placeholder*='Last'][lang='en']",   sh.get("last_name", sh.get("name", "")))
 
-                # Nepali name if provided
+                                         
                 self._safe_fill("input[name*='FirstName'][lang='ne']", sh.get("first_name_nepali", ""))
                 self._safe_fill("input[name*='LastName'][lang='ne']",  sh.get("last_name_nepali", ""))
 
-                # Gender
+                        
                 gender = sh.get("gender", "Male")
                 try:
                     self.page.select_option("select[name*='Gender']", label=gender, timeout=2000)
                 except:
                     pass
 
-                # Father/Husband
+                                
                 self._safe_fill("input[name*='FatherHusband']", sh.get("father_husband", ""))
 
-                # Foreigner
+                           
                 is_foreigner = sh.get("foreigner", False)
                 try:
                     radio_val = "Yes" if is_foreigner else "No"
@@ -362,7 +362,7 @@ class OCRBot:
                 self._safe_fill("input[name*='CompanyRegistrationNo']", sh.get("company_reg_no", ""))
                 self._safe_fill("input[name*='CompanyPanNo']",          sh.get("company_pan", ""))
 
-            # Share Holder Type checkboxes (Director, Founder, Shareowner, Jurisdiction)
+                                                                                        
             roles = sh.get("roles", ["Founder", "Shareowner"])
             for role in roles:
                 try:
@@ -370,11 +370,11 @@ class OCRBot:
                 except:
                     pass
 
-            # Share details
+                           
             self._safe_fill("input[name*='NoOfShares']",  str(sh.get("no_of_shares", "")))
             self._safe_fill("input[name*='TotalAmount']", str(sh.get("total_amount", "")))
 
-            # Witnesses
+                       
             witnesses = sh.get("witnesses", [])
             if witnesses:
                 try:
@@ -386,7 +386,7 @@ class OCRBot:
                 except:
                     pass
 
-            # Save the shareholder
+                                  
             try:
                 self.page.click("text=Save", timeout=5000)
                 time.sleep(1)
@@ -398,7 +398,7 @@ class OCRBot:
         except Exception as e:
             self._cb("registration", f"  ⚠ Could not add shareholder {index + 1}: {e}\nPlease add manually.")
 
-    # ── Document upload helper ────────────────────────────────────────────────
+                                                                                
 
     def _upload_documents(self, doc_files: dict):
         """Upload PDF files to Document Details section."""
@@ -407,7 +407,7 @@ class OCRBot:
             if not file_path:
                 continue
             try:
-                # Find the Add File button next to this document row
+                                                                    
                 row = self.page.locator(f"tr:has-text('{doc_name}')").first
                 file_input = row.locator("input[type='file']")
                 file_input.set_input_files(file_path)
@@ -416,7 +416,7 @@ class OCRBot:
             except Exception as e:
                 self._cb("registration", f"  ⚠ Could not upload '{doc_name}': {e}\nPlease upload manually.")
 
-    # ── Generic helpers ───────────────────────────────────────────────────────
+                                                                                
 
     def _safe_fill(self, selector: str, value: str):
         """Try multiple comma-separated selectors, fill the first that works."""

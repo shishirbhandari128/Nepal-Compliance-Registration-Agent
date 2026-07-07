@@ -70,8 +70,8 @@ def decompose_question(question: str) -> List[str]:
         if isinstance(sub_questions, list):
             subs = [q for q in sub_questions if isinstance(q, str)]
 
-            # Minimal recall guard: if user is asking about company registration/incorporation,
-            # ensure shareholders are covered (the LLM often misses it).
+                                                                                               
+                                                                        
             ql = question.lower()
             is_company_registration = (
                 "company" in ql

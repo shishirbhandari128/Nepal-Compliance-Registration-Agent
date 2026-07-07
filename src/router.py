@@ -16,63 +16,8 @@ from langchain_openai import ChatOpenAI
 from tools import build_pdf_options_block
 
 from .config import OPENAI_MODEL
-
-
-# SUMMARY_PROMPT = ChatPromptTemplate.from_template(
-#     """Read the following text extracted from a legal/regulatory PDF document.
-# Write ONE sentence (max 30 words) describing what topics this document covers.
-# Be specific — mention the exact subject matter (e.g. income tax rates, VAT registration,
-# company incorporation, labour rights, tourism licensing).
-
-# Document text (first portion):
-# {text}
-
-# Return only the one-sentence summary, nothing else.
-# """
-# )
-
-
-# def _summary_cache_path(pdf_path: Path) -> Path:
-#     """Each PDF gets a .summary file next to its vectorstore."""
-#     persist = Path("vectorstore") / pdf_path.stem
-#     persist.mkdir(parents=True, exist_ok=True)
-#     return persist / ".pdf_summary"
-
-
-# def _get_or_build_summary(pdf_path: Path) -> str:
-#     """
-#     Load cached summary if it exists, otherwise read the first 3000 chars
-#     of the PDF and ask the LLM to summarise it. Cache the result.
-#     """
-#     cache = _summary_cache_path(pdf_path)
-#     if cache.exists():
-#         return cache.read_text(encoding="utf-8").strip()
-
-#     # Read raw text from the PDF
-#     try:
-#         from langchain_community.document_loaders import PyPDFLoader
-#         pages = PyPDFLoader(str(pdf_path)).load()
-#         sample_text = " ".join(p.page_content for p in pages[:3])[:3000]
-#     except Exception:
-#         sample_text = pdf_path.stem.replace("_", " ").replace("-", " ")
-
-#     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
-#     msg = SUMMARY_PROMPT.format_messages(text=sample_text)
-#     summary = llm.invoke(msg).content.strip()
-
-#     cache.write_text(summary, encoding="utf-8")
-#     return summary
-
-
-# def _build_options_block(pdf_paths: List[Path]) -> str:
-#     """Build a rich description block for the router LLM."""
-#     lines = []
-#     for p in pdf_paths:
-#         summary = _get_or_build_summary(p)
-#         lines.append(f"- {p.name}\n    Summary: {summary}")
-#     return "\n".join(lines)
-
-
+                                                        
+                                                
 ROUTER_PROMPT = ChatPromptTemplate.from_template(
     """You are a routing supervisor for a Nepal compliance document search system.
 Your job is to select ONLY the PDF files that are directly relevant to the user's question.
@@ -120,7 +65,7 @@ def choose_relevant_pdfs(
     )
     raw = llm.invoke(msg).content.strip()
 
-    # Strip markdown fences
+                           
     raw = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"\n?```$", "", raw, flags=re.IGNORECASE)
 

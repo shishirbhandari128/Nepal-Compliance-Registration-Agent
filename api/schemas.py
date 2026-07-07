@@ -8,7 +8,7 @@ from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 
 
-# ── Chat ──────────────────────────────────────────────────────────────────────
+                                                                                
 
 class ChatRequest(BaseModel):
     question:   str           = Field(..., description="Compliance question")
@@ -22,13 +22,13 @@ class ChatResponse(BaseModel):
     answer:             str
     sub_questions:      List[str]
     citations:          List[str]
-    files_used:         List[str]       # actual files selected by router
-    files_used_count:   int             # how many files were selected
+    files_used:         List[str]                                        
+    files_used_count:   int                                           
     routing_reason:     str
     specialist_outputs: Dict[str, str]
 
 
-# ── Documents ─────────────────────────────────────────────────────────────────
+                                                                                
 
 class DocumentInfo(BaseModel):
     filename: str
@@ -40,7 +40,7 @@ class DocumentListResponse(BaseModel):
     documents: List[DocumentInfo]
 
 
-# ── Session ───────────────────────────────────────────────────────────────────
+                                                                                
 
 class SessionHistoryResponse(BaseModel):
     session_id: str
@@ -53,15 +53,15 @@ class ClearSessionResponse(BaseModel):
     cleared:    bool
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
+                                                                                
 
 class HealthResponse(BaseModel):
     status:   str
     version:  str
-    docs_dir: str          # tells the frontend where PDFs are loaded from
+    docs_dir: str                                                         
 
 
-# ── Registration Agent ────────────────────────────────────────────────────────
+                                                                                
 
 class RegistrationMessage(BaseModel):
     message:    str            = Field(..., description="User's message to the registration agent")
@@ -70,9 +70,9 @@ class RegistrationMessage(BaseModel):
 
 class RegistrationResponse(BaseModel):
     session_id:   str
-    reply:        str                    # agent's next question or confirmation
-    collected:    Dict                   # fields collected so far
-    missing:      List[str]              # field names still needed
-    complete:     bool                   # True when all fields collected
-    form_summary: Optional[str] = None  # filled form text (when complete)
-    issues:       List[str]    = []     # validation issues if any
+    reply:        str                                                           
+    collected:    Dict                                            
+    missing:      List[str]                                        
+    complete:     bool                                                   
+    form_summary: Optional[str] = None                                    
+    issues:       List[str]    = []                               

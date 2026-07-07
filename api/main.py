@@ -60,14 +60,14 @@ app.add_middleware(
 _graph = build_graph()
 
 
-# ── SSE helpers ───────────────────────────────────────────────────────────────
+                                                                                
 
 def sse(event: str, data: dict) -> str:
     """Format a single SSE event."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-# ── Streaming chat ─────────────────────────────────────────────────────────────
+                                                                                 
 
 async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
     """
@@ -92,11 +92,11 @@ async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
         yield sse("error", {"message": f"No PDF files found in: {docs_dir}"})
         return
 
-    # ── Stage 1: Run the full graph (decompose → route → retrieve → specialists)
-    # This part is NOT streamed — it runs silently while the user sees progress events
+                                                                                 
+                                                                                      
 
     yield sse("progress", {"stage": "decompose",  "message": "Breaking down your question…"})
-    await asyncio.sleep(0)   # yield control so SSE flushes
+    await asyncio.sleep(0)                                 
 
     initial_state: PipelineState = {
         "question":           request.question,
@@ -117,7 +117,7 @@ async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
     }
 
     try:
-        # Run graph in a thread so we don't block the event loop
+                                                                
         loop   = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _graph.invoke, initial_state)
     except Exception as e:
@@ -130,7 +130,7 @@ async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
     spec_outputs  = result.get("specialist_outputs", {})
     resolved_q    = result.get("resolved_question", request.question)
 
-    # Emit progress updates to show what happened
+                                                 
     yield sse("progress", {"stage": "route",     "message": f"Selected {len(files_used)} document(s)…"})
     await asyncio.sleep(0)
     yield sse("progress", {"stage": "retrieve",  "message": f"Retrieved and reranked evidence…"})
@@ -138,7 +138,7 @@ async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
     yield sse("progress", {"stage": "specialists","message": "Specialists analysed the evidence…"})
     await asyncio.sleep(0)
 
-    # Send metadata so frontend can render pills / sub-questions
+                                                                
     yield sse("meta", {
         "session_id":         session_id,
         "sub_questions":      sub_questions,
@@ -153,8 +153,8 @@ async def stream_chat(request: ChatRequest) -> AsyncGenerator[str, None]:
     yield sse("progress", {"stage": "stream", "message": "Generating answer…"})
     await asyncio.sleep(0)
 
-    # ── Stage 2: Stream the final merger answer token by token ────────────────
-    # We rebuild the merger prompt and stream directly from OpenAI
+                                                                                
+                                                                  
     from src.tools import format_per_doc_block, build_sources_block
     from langchain_core.prompts import ChatPromptTemplate
 
@@ -199,16 +199,16 @@ Instructions:
             full_answer += token
             yield sse("token", {"text": token})
 
-    # Append sources
+                    
     sources_text = "\n\nSources:\n" + build_sources_block(per_doc)
     yield sse("token", {"text": sources_text})
     full_answer += sources_text
 
-    # Save to memory
+                    
     session = get_session(session_id)
     session.add_assistant_turn(full_answer, sub_questions, citations)
 
-    # Send sources and specialist data for UI rendering
+                                                       
     yield sse("sources", {
         "citations":          citations,
         "specialist_outputs": spec_outputs,
@@ -226,13 +226,13 @@ async def chat_stream(request: ChatRequest):
         media_type="text/event-stream",
         headers={
             "Cache-Control":               "no-cache",
-            "X-Accel-Buffering":           "no",    # disable nginx buffering
+            "X-Accel-Buffering":           "no",                             
             "Access-Control-Allow-Origin": "*",
         },
     )
 
 
-# ── Non-streaming chat (kept for backward compatibility) ──────────────────────
+                                                                                
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 def chat(request: ChatRequest):
@@ -280,7 +280,7 @@ def chat(request: ChatRequest):
     )
 
 
-# ── Documents ─────────────────────────────────────────────────────────────────
+                                                                                
 
 @app.get("/documents", response_model=DocumentListResponse, tags=["Documents"])
 def list_documents():
@@ -294,7 +294,7 @@ def list_documents():
     )
 
 
-# ── Session ───────────────────────────────────────────────────────────────────
+                                                                                
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 def health():
@@ -314,7 +314,7 @@ def clear_session(session_id: str):
     return ClearSessionResponse(session_id=session_id, cleared=True)
 
 
-# ── Registration Agent ────────────────────────────────────────────────────────
+                                                                                
 
 _reg_sessions: dict = {}
 
@@ -334,19 +334,19 @@ def registration_chat(req: RegistrationMessage):
     state   = _reg_sessions[sid]
     history = state["history"]
 
-    # Bootstrap greeting — don't extract fields, just ask the first question
+                                                                            
     is_start = req.message == "Hello, I want to register a company."
     if not is_start:
         history.append({"role": "user", "content": req.message})
 
-    # Extract fields from user message (skip on bootstrap)
+                                                          
     if not is_start:
         before = set(k for k, v in state["collected"].items() if v)
         state["collected"] = extract_fields(req.message, state["collected"])
         after  = set(k for k, v in state["collected"].items() if v)
 
-        # Fallback: if LLM extracted nothing new, store the raw answer
-        # directly against the current missing field — covers ALL field types
+                                                                      
+                                                                             
         if before == after:
             missing_now = get_missing_fields(state["collected"])
             if missing_now:
@@ -354,16 +354,16 @@ def registration_chat(req: RegistrationMessage):
                 raw_val = req.message.strip()
 
                 if current_field == "objectives":
-                    # Store as a list of objective dicts that ocr_bot understands
+                                                                                 
                     lines = [l.strip() for l in raw_val.replace(";", "\n").splitlines() if l.strip()]
                     state["collected"]["objectives"] = [
                         {"nsic_code": "", "description": line} for line in lines
                     ] if lines else [{"nsic_code": "", "description": raw_val}]
                 elif current_field == "shareholders":
-                    # Store raw string — user will clarify per-shareholder later
+                                                                                
                     state["collected"]["shareholders"] = raw_val
                 else:
-                    # Scalar fields — strip currency symbols
+                                                            
                     clean = raw_val.replace("NPR", "").replace("Rs.", "").replace(",", "").strip()
                     state["collected"][current_field] = clean
 

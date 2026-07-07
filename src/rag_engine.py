@@ -81,10 +81,10 @@ def answer_with_retriever(
     if sub_questions is None:
         sub_questions = decompose_question(question)
 
-    # Step 1: Broad retrieval across all sub-questions (parallel)
+                                                                 
     docs = retrieve_for_sub_questions(sub_questions, retriever, max_docs_per_sub=5)
 
-    # Step 2: Rerank — cross-encoder scores every chunk against the original question
+                                                                                     
     print(f"    Reranking {len(docs)} chunks...")
     docs = rerank_documents(question, docs, top_n=TOP_K)
 

@@ -56,7 +56,7 @@ def rerank_documents(
         scored = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
         reranked = [doc for _, doc in scored[:top_n]]
 
-        # Store score in metadata for transparency
+                                                  
         for score, doc in scored[:top_n]:
             doc.metadata["rerank_score"] = round(float(score), 4)
 
